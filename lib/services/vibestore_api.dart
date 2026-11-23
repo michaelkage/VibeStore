@@ -198,6 +198,27 @@ class VibeStoreApi {
     return decoded;
   }
 
+  Future<Map<String, dynamic>> cachedInspection(String appId) async {
+    if (_baseUrl.isEmpty) {
+      throw const VibeStoreApiException(
+        'Configure the VibeStore API address first.',
+      );
+    }
+    final response = await _client
+        .get(
+          Uri.parse('$_baseUrl/api/v1/apps/$appId/inspection'),
+          headers: _authorizedHeaders(),
+        )
+        .timeout(_timeout);
+    final decoded = _decodeResponse(response);
+    if (decoded is! Map<String, dynamic>) {
+      throw const VibeStoreApiException(
+        'The cached inspection response was invalid.',
+      );
+    }
+    return decoded;
+  }
+
   Future<Map<String, dynamic>> indexRepository(String repositoryUrl) =>
       _post('repositories/index', {'repository_url': repositoryUrl.trim()});
 
