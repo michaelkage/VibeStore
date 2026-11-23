@@ -31,6 +31,8 @@ Health: http://localhost:8000/health
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
 - `POST /api/v1/repositories/index`: authenticated GitHub repository indexing with bounded README/Gradle/manifest retrieval and catalog persistence. Apply migrations `003_repository_submissions.sql` and `004_semantic_embeddings.sql` first.
+- `GET /api/v1/repositories/mine`: list only the authenticated user's repository submissions.
+- `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
 - `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.
 
@@ -64,6 +66,6 @@ Repository files are fetched as data and never executed. The indexing endpoint a
 
 ## Remaining platform work
 
-The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Authenticated one-shot GitHub repository indexing and provider-backed embeddings/hybrid search are implemented. Scheduled catalog refresh, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications, richer catalog/discovery UX, full X-Ray and Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
+The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Authenticated one-shot GitHub repository indexing, ownership-scoped submission management, stale-file replacement on re-index, and provider-backed embeddings/hybrid search are implemented. Scheduled catalog refresh, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications, richer catalog/discovery UX, full X-Ray and Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
 
 Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, verify webhook signatures, configure backup/restore, add observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
