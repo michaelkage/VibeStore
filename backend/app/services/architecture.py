@@ -45,7 +45,7 @@ def detect_declared_sdks(files: dict[str, str]) -> list[dict]:
 def inspect_manifest_flags(manifest: str) -> list[dict]:
     findings = []
     for line_number, line in enumerate(manifest.splitlines(), start=1):
-        if re.search(r'android:usesCleartextTraffic\\s*=\\s*"true"', line):
+        if re.search(r'android:usesCleartextTraffic\s*=\s*"true"', line):
             findings.append({
                 "category": "network_security",
                 "severity": "high",
@@ -55,7 +55,7 @@ def inspect_manifest_flags(manifest: str) -> list[dict]:
                 "evidence": line.strip()[:300],
                 "explanation": "The manifest explicitly enables cleartext traffic. Confirm whether this is required and restrict it with a network security configuration.",
             })
-        if re.search(r'android:exported\\s*=\\s*"true"', line) and "android:permission" not in line:
+        if re.search(r'android:exported\s*=\s*"true"', line) and "android:permission" not in line:
             findings.append({
                 "category": "component_exposure",
                 "severity": "review",
