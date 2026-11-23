@@ -42,9 +42,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       }
     } catch (error) {
       if (mounted) {
-        setState(
-          () => _error = 'Unable to open the VibeStore website: $error',
-        );
+        setState(() => _error = 'Unable to open the VibeStore website: $error');
       }
     }
   }
@@ -169,9 +167,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         if (appId != null && appId.isNotEmpty) {
           try {
             final cached = await api.cachedInspection(appId);
-            _inspection = const JsonEncoder.withIndent('  ').convert(
-              cached['report'] ?? cached,
-            );
+            _inspection = const JsonEncoder.withIndent(
+              '  ',
+            ).convert(cached['report'] ?? cached);
           } catch (error) {
             inspectionNotice = 'Inspection report is not available yet: $error';
           }
