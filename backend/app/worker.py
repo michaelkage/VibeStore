@@ -1,3 +1,5 @@
+from typing import ClassVar
+
 from arq import Retry
 from arq.connections import RedisSettings
 from sqlalchemy import text
@@ -63,7 +65,7 @@ async def shutdown(ctx):
 
 
 class WorkerSettings:
-    functions = [index_repository_job]
+    functions: ClassVar[list] = [index_repository_job]
     queue_name = "vibestore:repository-index"
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
     on_startup = startup
