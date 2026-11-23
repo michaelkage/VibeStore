@@ -63,6 +63,6 @@ Repository files are fetched as data and never executed. The indexing endpoint a
 
 ## Remaining platform work
 
-The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Automated catalog ingestion, embeddings and vector ranking, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and Flutter discovery/X-Ray/Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
+The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Authenticated one-shot GitHub repository indexing and provider-backed embeddings/hybrid search are implemented. Scheduled catalog refresh, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and Flutter discovery/X-Ray/Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
 
 Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, verify webhook signatures, configure backup/restore, add observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
