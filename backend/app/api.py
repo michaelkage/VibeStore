@@ -3,7 +3,7 @@ import math
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +33,7 @@ from app.schemas import (
     UserResponse,
 )
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
-from app.services.github import fetch_repository_files, fetch_repository_snapshot
+from app.services.github import fetch_repository_files, fetch_repository_snapshot, parse_github_url
 from app.services.manifest import inspect_manifest
 
 router = APIRouter()
