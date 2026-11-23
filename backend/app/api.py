@@ -1,3 +1,4 @@
+import asyncio
 import math
 
 import httpx
@@ -43,6 +44,7 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
     if len(settings.jwt_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured")
     email = payload.email.strip().lower()
+    password_hash = await asyncio.to_thread(hash_password, payload.password)
     try:
         result = await session.execute(
             text("""
@@ -50,7 +52,7 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
                 VALUES (:email, :password_hash)
                 RETURNING id::text AS id, email, created_at
             """),
-            {"email": email, "password_hash": hash_password(payload.password)},
+            {"email": email, "password_hash": password_hash},
         )
         user = result.mappings().one()
         await session.commit()
@@ -78,7 +80,9 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
         {"email": payload.email.strip().lower()},
     )
     user = result.mappings().first()
-    if user is None or not verify_password(payload.password, user["password_hash"]):
+    candidate_hash = user["password_hash"] if user is not None else __import__("app.auth", fromlist=["_DUMMY_PASSWORD_HASH"])._DUMMY_PASSWORD_HASH
+    password_valid = await asyncio.to_thread(verify_password, payload.password, candidate_hash)
+    if user is None or not password_valid:
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
     user_response = UserResponse(id=user["id"], email=user["email"], created_at=user["created_at"])
