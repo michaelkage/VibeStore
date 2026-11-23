@@ -20,6 +20,7 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authen
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql
 ```
 
 OpenAPI: http://localhost:8000/docs  
@@ -40,16 +41,6 @@ Health: http://localhost:8000/health
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
 - `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.
 
-Example registration:
-
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"developer@example.com","password":"use-a-long-unique-password"}'
-```
-
-Use the returned `access_token` as `Authorization: Bearer <token>` for authenticated endpoints.
-
 ## Authentication security
 
 - Passwords are hashed with Argon2 through pwdlib; plaintext passwords are never stored.
@@ -60,9 +51,18 @@ Use the returned `access_token` as `Authorization: Bearer <token>` for authentic
 - Registration and login are rate-limited to 10 attempts per client IP per 15-minute Redis window. If Redis is unavailable, authentication attempts fail closed with HTTP 503.
 - Access tokens are short-lived; refresh-token rotation, email verification, password reset, account recovery and MFA are not yet implemented. Do not expose this service as a production identity provider until these controls are added.
 
-## Background indexing and GitHub webhooks
+## Background indexing, refresh and reconciliation
 
-The API enqueues jobs in Redis using Arq; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries transient failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled. Apply `005_async_repository_indexing.sql` after migrations `001` through `004`.
+The API enqueues jobs in Redis using Arq; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled.
+
+The same worker runs a scheduled reconciliation every 15 minutes and once at startup. It:
+
+1. Finds catalog apps whose `indexed_at` is older than `CATALOG_REFRESH_INTERVAL_DAYS` (default 7 days), with a bounded batch size.
+2. Creates one scheduled refresh job per repository only when no queued, running or retrying job already exists. Transaction-scoped PostgreSQL advisory locks prevent duplicate scheduled jobs across worker replicas.
+3. Repairs durable `queued` jobs by re-enqueuing their deterministic Arq IDs, covering the database-commit/Redis-enqueue failure window.
+4. Recovers jobs left `running` beyond `INDEXING_STALE_JOB_MINUTES` (default 15) after a worker interruption, then re-enqueues them.
+
+The scheduler does not delete catalog entries when a repository is unavailable; failed refreshes retain the last known-good catalog snapshot and record the job error. Refresh is bounded by `CATALOG_REFRESH_BATCH_SIZE` (default 50) per tick; queued recovery is bounded by `INDEXING_RECONCILE_BATCH_SIZE` (default 100). Apply `006_catalog_refresh_reconciliation.sql` after migrations `001` through `005`.
 
 Configure a random `GITHUB_WEBHOOK_SECRET` in `.env`, then register a GitHub repository webhook targeting `https://YOUR_API_HOST/api/v1/webhooks/github`, content type `application/json`, with the `push` event selected. The endpoint verifies `X-Hub-Signature-256` against the exact raw request body using constant-time comparison, caps payloads at 1 MB, ignores non-push and non-default-branch events, and deduplicates `X-GitHub-Delivery`. A repeated delivery can recover an enqueue that previously failed because Redis was unavailable. Only public canonical GitHub repository URLs are accepted.
 
@@ -78,6 +78,6 @@ Repository files are fetched as data and never executed. The indexing endpoint a
 
 ## Remaining platform work
 
-Scheduled periodic catalog refresh and reconciliation, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and richer catalog/discovery UX remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
+Comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and richer catalog/discovery UX remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
 
 Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, configure backups and observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
