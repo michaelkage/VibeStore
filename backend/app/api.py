@@ -122,7 +122,7 @@ async def index_repository(
         try:
             provider = get_ai_provider()
             if provider is not None:
-                source_text = "\\n".join(
+                source_text = " ".join(
                     [snapshot["name"], description or "", *(item["content"] for item in snapshot["files"])]
                 )[:12_000]
                 vectors = await provider.embed([source_text])
