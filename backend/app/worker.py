@@ -64,6 +64,7 @@ async def shutdown(ctx):
 
 class WorkerSettings:
     functions = [index_repository_job]
+    queue_name = "vibestore:repository-index"
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
     on_startup = startup
     on_shutdown = shutdown
