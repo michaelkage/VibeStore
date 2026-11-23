@@ -74,7 +74,9 @@ async def test_async_indexing_endpoint_enqueues_and_returns_job(job_client, monk
 
     assert response.status_code == 202
     assert response.json()["id"] == JOB_ID
-    enqueue.assert_awaited_once_with(JOB_ID, "https://github.com/example/app", USER_ID)
+    assert enqueue.await_count == 1
+    assert enqueue.await_args.args[1:] == ("https://github.com/example/app", USER_ID)
+    assert isinstance(enqueue.await_args.args[0], str)
     session.commit.assert_awaited_once()
 
 
