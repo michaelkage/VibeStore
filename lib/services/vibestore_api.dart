@@ -26,7 +26,6 @@ class VibeStoreApi {
        _accessToken = accessToken;
 
   static const _baseUrlKey = 'vibestore.api.baseUrl';
-  static const _accessTokenKey = 'vibestore.api.accessToken';
   static const _timeout = Duration(seconds: 30);
 
   final SharedPreferences _preferences;
@@ -43,7 +42,7 @@ class VibeStoreApi {
       preferences: preferences,
       client: http.Client(),
       baseUrl: preferences.getString(_baseUrlKey) ?? '',
-      accessToken: preferences.getString(_accessTokenKey),
+      accessToken: null,
     );
   }
 
@@ -74,7 +73,6 @@ class VibeStoreApi {
 
     if (normalized != _baseUrl) {
       _accessToken = null;
-      await _preferences.remove(_accessTokenKey);
     }
     _baseUrl = normalized;
     await _preferences.setString(_baseUrlKey, normalized);
@@ -100,10 +98,16 @@ class VibeStoreApi {
 
   Future<List<Map<String, dynamic>>> search(String query, {int limit = 20}) async {
     final response = await _post('search', {'query': query, 'limit': limit});
-    return response.values
+    final items = response['items'];
+    if (items is! List) {
+      throw const VibeStoreApiException('The search response was invalid.');
+    }
+    return items
         .map((value) => Map<String, dynamic>.from(value as Map))
         .toList(growable: false);
   }
+
+  Future<Map<String, dynamic>> currentUser() async => _post('auth/me', {});
 
   Future<Map<String, dynamic>> indexRepository(String repositoryUrl) =>
       _post('repositories/index', {'repository_url': repositoryUrl.trim()});
@@ -113,7 +117,6 @@ class VibeStoreApi {
 
   Future<void> logout() async {
     _accessToken = null;
-    await _preferences.remove(_accessTokenKey);
   }
 
   Future<void> _saveToken(Map<String, dynamic> response) async {
@@ -122,7 +125,6 @@ class VibeStoreApi {
       throw const VibeStoreApiException('The API returned an invalid access token.');
     }
     _accessToken = token;
-    await _preferences.setString(_accessTokenKey, token);
   }
 
   Future<Map<String, dynamic>> _post(
