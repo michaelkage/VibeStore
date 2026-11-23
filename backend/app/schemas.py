@@ -7,6 +7,7 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     database: str
+    redis: str
 
 
 class SearchRequest(BaseModel):
