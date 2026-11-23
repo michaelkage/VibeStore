@@ -1,5 +1,7 @@
 from functools import lru_cache
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
@@ -9,14 +11,19 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:3000"
     github_token: str | None = None
+    jwt_secret_key: str = ""
+    jwt_issuer: str = "vibestore-api"
+    jwt_access_token_minutes: int = 30
     ai_provider: str = "none"
     ai_base_url: str | None = None
     ai_api_key: str | None = None
     ai_model: str | None = None
     ai_embedding_model: str | None = None
+
     @property
     def allowed_origins(self) -> list[str]:
-        return [v.strip() for v in self.cors_origins.split(",") if v.strip()]
+        return [value.strip() for value in self.cors_origins.split(",") if value.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
