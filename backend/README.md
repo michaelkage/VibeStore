@@ -18,7 +18,7 @@ docker compose up --build -d
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/001_initial.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authentication.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql\ndocker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
 ``
 
 OpenAPI: http://localhost:8000/docs  
@@ -66,6 +66,6 @@ Repository files are fetched as data and never executed. The indexing endpoint a
 
 ## Remaining platform work
 
-The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Authenticated one-shot GitHub repository indexing, ownership-scoped submission management, stale-file replacement on re-index, and provider-backed embeddings/hybrid search are implemented. Scheduled catalog refresh, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications, richer catalog/discovery UX, full X-Ray and Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
+The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Authenticated one-shot GitHub repository indexing, ownership-scoped submission management, stale-file replacement on re-index, and provider-backed embeddings/hybrid search are implemented. Scheduled periodic catalog refresh and reconciliation, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications, richer catalog/discovery UX, full X-Ray and Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
 
 Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, verify webhook signatures, configure backup/restore, add observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
