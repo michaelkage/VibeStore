@@ -1,5 +1,6 @@
 import asyncio
 import math
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -25,6 +26,7 @@ from app.schemas import (
     ManifestFinding,
     RegisterRequest,
     RepositoryRequest,
+    RepositorySubmissionResponse,
     SearchRequest,
     SearchResult,
     TokenResponse,
@@ -205,6 +207,12 @@ async def index_repository(
     )
     app_id = result.scalar_one()
 
+    # A refresh represents the current bounded snapshot; remove stale paths/hashes first.
+    await session.execute(
+        text("DELETE FROM repository_files WHERE app_id = CAST(:app_id AS uuid)"),
+        {"app_id": app_id},
+    )
+
     for item in snapshot["files"]:
         suffix = item["path"].rsplit(".", 1)[-1].lower() if "." in item["path"] else ""
         language = {
@@ -252,6 +260,62 @@ async def index_repository(
         stars=snapshot["stars"],
         indexed_files=len(snapshot["files"]),
     )
+
+
+@router.get(
+    "/repositories/mine",
+    response_model=list[RepositorySubmissionResponse],
+    tags=["discovery"],
+)
+async def list_my_repositories(
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        text("""
+            SELECT
+                apps.id::text AS id,
+                apps.name,
+                apps.description,
+                apps.repository_url,
+                apps.default_branch,
+                apps.latest_commit_sha,
+                apps.stars,
+                submissions.submitted_at,
+                apps.indexed_at
+            FROM repository_submissions AS submissions
+            JOIN apps ON apps.id = submissions.app_id
+            WHERE submissions.user_id = CAST(:user_id AS uuid)
+            ORDER BY submissions.submitted_at DESC, apps.name ASC
+        """),
+        {"user_id": user["id"]},
+    )
+    return [RepositorySubmissionResponse(**dict(row)) for row in result.mappings()]
+
+
+@router.delete(
+    "/repositories/mine/{app_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["discovery"],
+)
+async def remove_my_repository(
+    app_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        text("""
+            DELETE FROM repository_submissions
+            WHERE user_id = CAST(:user_id AS uuid)
+              AND app_id = CAST(:app_id AS uuid)
+            RETURNING app_id
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Repository submission not found")
+    await session.commit()
+    return None
 
 
 @router.post("/search", response_model=list[SearchResult], tags=["discovery"])
