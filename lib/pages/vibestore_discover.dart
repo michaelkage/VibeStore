@@ -164,11 +164,24 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       final jobStatus = job['status']?.toString() ?? 'unknown';
       if (jobStatus == 'completed') {
         final repositories = await api.myRepositories();
+        String? inspectionNotice;
+        final appId = job['app_id']?.toString();
+        if (appId != null && appId.isNotEmpty) {
+          try {
+            final cached = await api.cachedInspection(appId);
+            _inspection = const JsonEncoder.withIndent(
+              '  ',
+            ).convert(cached['report'] ?? cached);
+          } catch (error) {
+            inspectionNotice = 'Inspection report is not available yet: $error';
+          }
+        }
         if (!mounted) return;
         setState(() {
           _submissions = repositories;
           _notice =
-              'Repository indexing completed. Your collection is up to date.';
+              inspectionNotice ??
+              'Repository indexed and cached inspection report loaded.';
         });
         return;
       }
