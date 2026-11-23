@@ -1,6 +1,9 @@
 import asyncio
+import hashlib
+import hmac
+import json
 import math
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -19,6 +22,7 @@ from app.auth import (
 from app.config import get_settings
 from app.db import get_session
 from app.redis_client import enforce_auth_rate_limit
+from app.queue import enqueue_repository_index
 from app.schemas import (
     InspectionResponse,
     IndexRepositoryResponse,
@@ -27,6 +31,7 @@ from app.schemas import (
     RegisterRequest,
     RepositoryRequest,
     RepositorySubmissionResponse,
+    RepositoryIndexJobResponse,
     SearchRequest,
     SearchResult,
     TokenResponse,
@@ -260,6 +265,157 @@ async def index_repository(
         stars=snapshot["stars"],
         indexed_files=len(snapshot["files"]),
     )
+
+
+@router.post(
+    "/repositories/index-jobs",
+    response_model=RepositoryIndexJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    tags=["discovery"],
+)
+async def enqueue_repository_index_job(
+    payload: RepositoryRequest,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    repository_url = str(payload.repository_url)
+    try:
+        parse_github_url(repository_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    job_id = str(uuid4())
+    result = await session.execute(
+        text("""
+            INSERT INTO repository_index_jobs (id, repository_url, requested_by, source)
+            VALUES (CAST(:id AS uuid), :repository_url, CAST(:user_id AS uuid), 'api')
+            RETURNING id::text AS id, status, repository_url, attempt_count, error,
+                      app_id::text AS app_id, created_at, updated_at, completed_at
+        """),
+        {"id": job_id, "repository_url": repository_url, "user_id": user["id"]},
+    )
+    job = dict(result.mappings().one())
+    await session.commit()
+    try:
+        await enqueue_repository_index(job_id, repository_url, user["id"])
+    except Exception as exc:
+        await session.execute(
+            text("""
+                UPDATE repository_index_jobs
+                SET status = 'failed', error = 'Queue unavailable', updated_at = now()
+                WHERE id = CAST(:id AS uuid)
+            """),
+            {"id": job_id},
+        )
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Repository indexing queue is unavailable") from exc
+    return RepositoryIndexJobResponse(**job)
+
+
+@router.get(
+    "/repositories/jobs/{job_id}",
+    response_model=RepositoryIndexJobResponse,
+    tags=["discovery"],
+)
+async def get_repository_index_job(
+    job_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        text("""
+            SELECT id::text AS id, status, repository_url, attempt_count, error,
+                   app_id::text AS app_id, created_at, updated_at, completed_at
+            FROM repository_index_jobs
+            WHERE id = CAST(:job_id AS uuid)
+              AND requested_by = CAST(:user_id AS uuid)
+        """),
+        {"job_id": str(job_id), "user_id": user["id"]},
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Repository indexing job not found")
+    return RepositoryIndexJobResponse(**dict(row))
+
+
+@router.post("/webhooks/github", status_code=status.HTTP_202_ACCEPTED, tags=["integrations"])
+async def github_webhook(
+    request: Request,
+    signature: str | None = Header(default=None, alias="X-Hub-Signature-256"),
+    event: str | None = Header(default=None, alias="X-GitHub-Event"),
+    delivery: str | None = Header(default=None, alias="X-GitHub-Delivery"),
+    session: AsyncSession = Depends(get_session),
+):
+    secret = get_settings().github_webhook_secret
+    if not secret:
+        raise HTTPException(status_code=503, detail="GitHub webhook integration is not configured")
+    if not signature or not delivery or len(delivery) > 100:
+        raise HTTPException(status_code=400, detail="Missing GitHub webhook signature or delivery ID")
+    body = await request.body()
+    if len(body) > 1_000_000:
+        raise HTTPException(status_code=413, detail="GitHub webhook payload is too large")
+    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, signature):
+        raise HTTPException(status_code=401, detail="Invalid GitHub webhook signature")
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid GitHub webhook JSON") from exc
+
+    if event != "push" or payload.get("deleted") is True:
+        return {"accepted": True, "ignored": True, "reason": "event_not_indexable"}
+    repository = payload.get("repository") or {}
+    repository_url = repository.get("html_url")
+    default_branch = repository.get("default_branch")
+    pushed_ref = payload.get("ref")
+    if not repository_url or not default_branch or pushed_ref != f"refs/heads/{default_branch}":
+        return {"accepted": True, "ignored": True, "reason": "not_default_branch"}
+    try:
+        parse_github_url(repository_url)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Webhook repository URL is not a supported GitHub URL") from None
+
+    duplicate = await session.execute(
+        text("""
+            INSERT INTO github_webhook_deliveries (delivery_id, event, repository_url)
+            VALUES (:delivery, :event, :repository_url)
+            ON CONFLICT (delivery_id) DO NOTHING
+            RETURNING delivery_id
+        """),
+        {"delivery": delivery, "event": event, "repository_url": repository_url},
+    )
+    if duplicate.scalar_one_or_none() is None:
+        return {"accepted": True, "duplicate": True}
+
+    job_id = str(uuid4())
+    await session.execute(
+        text("""
+            INSERT INTO repository_index_jobs (id, repository_url, source)
+            VALUES (CAST(:id AS uuid), :repository_url, 'github_webhook')
+        """),
+        {"id": job_id, "repository_url": repository_url},
+    )
+    await session.execute(
+        text("""
+            UPDATE github_webhook_deliveries SET job_id = CAST(:job_id AS uuid)
+            WHERE delivery_id = :delivery
+        """),
+        {"job_id": job_id, "delivery": delivery},
+    )
+    await session.commit()
+    try:
+        await enqueue_repository_index(job_id, repository_url, None)
+    except Exception as exc:
+        await session.execute(
+            text("""
+                UPDATE repository_index_jobs
+                SET status = 'failed', error = 'Queue unavailable', updated_at = now()
+                WHERE id = CAST(:id AS uuid)
+            """),
+            {"id": job_id},
+        )
+        await session.commit()
+        raise HTTPException(status_code=503, detail="Repository indexing queue is unavailable") from exc
+    return {"accepted": True, "job_id": job_id}
 
 
 @router.get(
