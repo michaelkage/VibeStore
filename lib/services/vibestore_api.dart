@@ -60,7 +60,8 @@ class VibeStoreApi {
       '127.0.0.1',
       '10.0.2.2',
     }.contains(uri.host);
-    if (uri.scheme != 'https' && !(uri.scheme == 'http' && isLocal && !kReleaseMode)) {
+    if (uri.scheme != 'https' &&
+        !(uri.scheme == 'http' && isLocal && !kReleaseMode)) {
       throw const VibeStoreApiException(
         'HTTPS is required. HTTP is allowed only for local debug development.',
       );
@@ -91,7 +92,10 @@ class VibeStoreApi {
     return Map<String, dynamic>.from(response['user'] as Map);
   }
 
-  Future<List<Map<String, dynamic>>> search(String query, {int limit = 20}) async {
+  Future<List<Map<String, dynamic>>> search(
+    String query, {
+    int limit = 20,
+  }) async {
     final response = await _post('search', {'query': query, 'limit': limit});
     final items = response['items'];
     if (items is! List) {
@@ -102,10 +106,11 @@ class VibeStoreApi {
         .toList(growable: false);
   }
 
-
   Future<List<Map<String, dynamic>>> myRepositories() async {
     if (_baseUrl.isEmpty) {
-      throw const VibeStoreApiException('Configure the VibeStore API address first.');
+      throw const VibeStoreApiException(
+        'Configure the VibeStore API address first.',
+      );
     }
     final response = await _client
         .get(
@@ -115,7 +120,9 @@ class VibeStoreApi {
         .timeout(_timeout);
     final decoded = _decodeResponse(response);
     if (decoded is! List) {
-      throw const VibeStoreApiException('The repository collection response was invalid.');
+      throw const VibeStoreApiException(
+        'The repository collection response was invalid.',
+      );
     }
     return decoded
         .map((value) => Map<String, dynamic>.from(value as Map))
@@ -124,7 +131,9 @@ class VibeStoreApi {
 
   Future<void> removeMyRepository(String appId) async {
     if (_baseUrl.isEmpty) {
-      throw const VibeStoreApiException('Configure the VibeStore API address first.');
+      throw const VibeStoreApiException(
+        'Configure the VibeStore API address first.',
+      );
     }
     final response = await _client
         .delete(
@@ -154,7 +163,9 @@ class VibeStoreApi {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map ? decoded['detail'] : null;
       throw VibeStoreApiException(
-        detail is String ? detail : 'VibeStore API request failed (${response.statusCode}).',
+        detail is String
+            ? detail
+            : 'VibeStore API request failed (${response.statusCode}).',
         statusCode: response.statusCode,
       );
     }
@@ -174,7 +185,9 @@ class VibeStoreApi {
   void _saveToken(Map<String, dynamic> response) {
     final token = response['access_token'];
     if (token is! String || token.isEmpty) {
-      throw const VibeStoreApiException('The API returned an invalid access token.');
+      throw const VibeStoreApiException(
+        'The API returned an invalid access token.',
+      );
     }
     _accessToken = token;
   }
@@ -184,7 +197,9 @@ class VibeStoreApi {
     Map<String, dynamic> payload,
   ) async {
     if (_baseUrl.isEmpty) {
-      throw const VibeStoreApiException('Configure the VibeStore API address first.');
+      throw const VibeStoreApiException(
+        'Configure the VibeStore API address first.',
+      );
     }
     final headers = <String, String>{
       'Accept': 'application/json',
@@ -210,7 +225,9 @@ class VibeStoreApi {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = decoded is Map ? decoded['detail'] : null;
       throw VibeStoreApiException(
-        detail is String ? detail : 'VibeStore API request failed (${response.statusCode}).',
+        detail is String
+            ? detail
+            : 'VibeStore API request failed (${response.statusCode}).',
         statusCode: response.statusCode,
       );
     }
@@ -218,7 +235,9 @@ class VibeStoreApi {
       return {'items': decoded};
     }
     if (decoded is! Map<String, dynamic>) {
-      throw const VibeStoreApiException('The VibeStore API returned an invalid response.');
+      throw const VibeStoreApiException(
+        'The VibeStore API returned an invalid response.',
+      );
     }
     return decoded;
   }
