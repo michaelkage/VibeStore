@@ -1,6 +1,10 @@
+import math
+
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai.openai_compatible import get_ai_provider
+from app.config import get_settings
 from app.services.github import fetch_repository_snapshot
 
 
@@ -27,15 +31,33 @@ async def index_repository_snapshot(
         except ValueError:
             package_name = None
 
+    embedding_literal = None
+    embedding_model = None
+    settings = get_settings()
+    if settings.ai_provider != "none" and settings.ai_embedding_model:
+        provider = get_ai_provider()
+        if provider is not None:
+            source_text = " ".join(
+                [snapshot["name"], description or "", *(item["content"] for item in snapshot["files"])]
+            )[:12_000]
+            vectors = await provider.embed([source_text])
+            if len(vectors) != 1 or not vectors[0] or len(vectors[0]) > 8192:
+                raise ValueError("Embedding provider returned an invalid vector")
+            values = [float(value) for value in vectors[0]]
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError("Embedding provider returned a non-finite vector")
+            embedding_literal = "[" + ",".join(format(value, ".9g") for value in values) + "]"
+            embedding_model = settings.ai_embedding_model
+
     result = await session.execute(
         text("""
             INSERT INTO apps (
                 package_name, name, description, repository_url, default_branch, stars,
-                license, latest_commit_sha, indexed_at
+                license, latest_commit_sha, indexed_at, embedding, embedding_model
             )
             VALUES (
                 :package_name, :name, :description, :repository_url, :default_branch, :stars,
-                :license, :commit_sha, now()
+                :license, :commit_sha, now(), CAST(:embedding AS vector), :embedding_model
             )
             ON CONFLICT (repository_url) DO UPDATE SET
                 package_name = COALESCE(EXCLUDED.package_name, apps.package_name),
@@ -46,7 +68,9 @@ async def index_repository_snapshot(
                 license = EXCLUDED.license,
                 latest_commit_sha = EXCLUDED.latest_commit_sha,
                 indexed_at = now(),
-                updated_at = now()
+                updated_at = now(),
+                embedding = COALESCE(EXCLUDED.embedding, apps.embedding),
+                embedding_model = COALESCE(EXCLUDED.embedding_model, apps.embedding_model)
             RETURNING id::text AS id
         """),
         {
@@ -58,6 +82,8 @@ async def index_repository_snapshot(
             "stars": snapshot["stars"],
             "license": snapshot["license"],
             "commit_sha": snapshot["commit_sha"],
+            "embedding": embedding_literal,
+            "embedding_model": embedding_model,
         },
     )
     app_id = result.scalar_one()
