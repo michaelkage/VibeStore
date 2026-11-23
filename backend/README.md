@@ -30,9 +30,9 @@ Health: http://localhost:8000/health
 - `POST /api/v1/auth/register`: create an account and issue a short-lived access token.
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
-- `POST /api/v1/repositories/index`: authenticated GitHub repository indexing with bounded README/manifest retrieval and catalog persistence. Apply migration `003_repository_submissions.sql` first.
+- `POST /api/v1/repositories/index`: authenticated GitHub repository indexing with bounded README/Gradle/manifest retrieval and catalog persistence. Apply migrations `003_repository_submissions.sql` and `004_semantic_embeddings.sql` first.
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
-- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository's Android manifest and report declared permissions.
+- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.
 
 Example registration:
 
@@ -52,7 +52,7 @@ Use the returned `access_token` as `Authorization: Bearer <token>` for `/auth/me
 - Account email addresses are normalized to lowercase and protected by a unique database index.
 - Login failures use a generic error response; Argon2 hashing/verification runs off the async event loop and unknown-account attempts use a dummy hash.
 - Registration and login are rate-limited to 10 attempts per client IP per 15-minute Redis window. If Redis is unavailable, authentication attempts fail closed with HTTP 503.
-- Access tokens are short-lived; refresh-token rotation, email verification, password reset, account recovery, MFA, and email verification, password reset, account recovery and MFA are not yet implemented. Do not expose this service to the public internet as a production identity provider until these controls are added.
+- Access tokens are short-lived; refresh-token rotation, email verification, password reset, account recovery and MFA are not yet implemented. Do not expose this service to the public internet as a production identity provider until these controls are added.
 
 ## AI provider adapter
 
@@ -64,6 +64,6 @@ Repository files are fetched as data and never executed. The indexing endpoint a
 
 ## Remaining platform work
 
-The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Authenticated one-shot GitHub repository indexing and provider-backed embeddings/hybrid search are implemented. Scheduled catalog refresh, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and Flutter discovery/X-Ray/Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
+The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Authenticated one-shot GitHub repository indexing and provider-backed embeddings/hybrid search are implemented. Scheduled catalog refresh, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications, richer catalog/discovery UX, full X-Ray and Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
 
 Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, verify webhook signatures, configure backup/restore, add observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
