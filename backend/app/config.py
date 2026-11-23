@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -13,7 +14,7 @@ class Settings(BaseSettings):
     github_token: str | None = None
     jwt_secret_key: str = ""
     jwt_issuer: str = "vibestore-api"
-    jwt_access_token_minutes: int = 30
+    jwt_access_token_minutes: int = Field(default=30, ge=5, le=1440)
     ai_provider: str = "none"
     ai_base_url: str | None = None
     ai_api_key: str | None = None
