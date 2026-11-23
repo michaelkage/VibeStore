@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.db import get_session
 from app.schemas import (
     InspectionResponse,
+    IndexRepositoryResponse,
     LoginRequest,
     ManifestFinding,
     RegisterRequest,
@@ -18,7 +19,7 @@ from app.schemas import (
     TokenResponse,
     UserResponse,
 )
-from app.services.github import fetch_repository_files
+from app.services.github import fetch_repository_files, fetch_repository_snapshot
 from app.services.manifest import inspect_manifest
 
 router = APIRouter()
@@ -79,6 +80,109 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
 @router.get("/auth/me", response_model=UserResponse, tags=["authentication"])
 async def get_me(user=Depends(get_current_user)):
     return UserResponse(**user)
+
+
+@router.post(
+    "/repositories/index",
+    response_model=IndexRepositoryResponse,
+    status_code=status.HTTP_200_OK,
+    tags=["discovery"],
+)
+async def index_repository(
+    payload: RepositoryRequest,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    try:
+        snapshot = await fetch_repository_snapshot(str(payload.repository_url))
+    except (ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(status_code=422, detail=f"Repository could not be indexed: {exc}") from exc
+
+    readme = next(
+        (item["content"] for item in snapshot["files"] if item["path"].lower() in {"readme.md", "readme"}),
+        None,
+    )
+    description = snapshot["description"] or (readme[:500] if readme else None)
+    result = await session.execute(
+        text("""
+            INSERT INTO apps (
+                name, description, repository_url, default_branch, stars,
+                license, latest_commit_sha, indexed_at
+            )
+            VALUES (
+                :name, :description, :repository_url, :default_branch, :stars,
+                :license, :commit_sha, now()
+            )
+            ON CONFLICT (repository_url) DO UPDATE SET
+                name = EXCLUDED.name,
+                description = COALESCE(EXCLUDED.description, apps.description),
+                default_branch = EXCLUDED.default_branch,
+                stars = EXCLUDED.stars,
+                license = EXCLUDED.license,
+                latest_commit_sha = EXCLUDED.latest_commit_sha,
+                indexed_at = now(),
+                updated_at = now()
+            RETURNING id::text AS id
+        """),
+        {
+            "name": snapshot["name"],
+            "description": description,
+            "repository_url": snapshot["repository_url"],
+            "default_branch": snapshot["default_branch"],
+            "stars": snapshot["stars"],
+            "license": snapshot["license"],
+            "commit_sha": snapshot["commit_sha"],
+        },
+    )
+    app_id = result.scalar_one()
+
+    for item in snapshot["files"]:
+        suffix = item["path"].rsplit(".", 1)[-1].lower() if "." in item["path"] else ""
+        language = {
+            "xml": "xml",
+            "md": "markdown",
+            "gradle": "gradle",
+            "kts": "kotlin",
+        }.get(suffix)
+        await session.execute(
+            text("""
+                INSERT INTO repository_files (
+                    app_id, path, content_sha, language, content_excerpt, indexed_at
+                )
+                VALUES (
+                    CAST(:app_id AS uuid), :path, :content_sha, :language, :content_excerpt, now()
+                )
+                ON CONFLICT (app_id, path, content_sha) DO UPDATE SET
+                    content_excerpt = EXCLUDED.content_excerpt,
+                    indexed_at = now()
+            """),
+            {
+                "app_id": app_id,
+                "path": item["path"],
+                "content_sha": item["content_sha"],
+                "language": language,
+                "content_excerpt": item["content"][:20_000],
+            },
+        )
+
+    await session.execute(
+        text("""
+            INSERT INTO repository_submissions (user_id, app_id)
+            VALUES (CAST(:user_id AS uuid), CAST(:app_id AS uuid))
+            ON CONFLICT (user_id, app_id) DO UPDATE SET submitted_at = now()
+        """),
+        {"user_id": user["id"], "app_id": app_id},
+    )
+    await session.commit()
+    return IndexRepositoryResponse(
+        id=app_id,
+        name=snapshot["name"],
+        repository_url=snapshot["repository_url"],
+        default_branch=snapshot["default_branch"],
+        latest_commit_sha=snapshot["commit_sha"],
+        stars=snapshot["stars"],
+        indexed_files=len(snapshot["files"]),
+    )
 
 
 @router.post("/search", response_model=list[SearchResult], tags=["discovery"])
