@@ -1,9 +1,12 @@
+import math
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.ai import get_ai_provider
 from app.auth import create_access_token, get_current_user, hash_password, verify_password
 from app.config import get_settings
 from app.db import get_session
@@ -23,6 +26,15 @@ from app.services.github import fetch_repository_files, fetch_repository_snapsho
 from app.services.manifest import inspect_manifest
 
 router = APIRouter()
+
+
+def _serialize_embedding(values: list[float]) -> str:
+    if not values or len(values) > 8192:
+        raise ValueError("Embedding dimensions are outside the supported range")
+    normalized = [float(value) for value in values]
+    if not all(math.isfinite(value) for value in normalized):
+        raise ValueError("Embedding contains a non-finite value")
+    return "[" + ",".join(format(value, ".9g") for value in normalized) + "]"
 
 
 @router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["authentication"])
@@ -103,15 +115,33 @@ async def index_repository(
         None,
     )
     description = snapshot["description"] or (readme[:500] if readme else None)
+    embedding_literal = None
+    embedding_model = None
+    settings = get_settings()
+    if settings.ai_provider != "none" and settings.ai_embedding_model:
+        try:
+            provider = get_ai_provider()
+            if provider is not None:
+                source_text = "\\n".join(
+                    [snapshot["name"], description or "", *(item["content"] for item in snapshot["files"])]
+                )[:12_000]
+                vectors = await provider.embed([source_text])
+                if len(vectors) != 1:
+                    raise ValueError("Embedding provider returned an unexpected result count")
+                embedding_literal = _serialize_embedding(vectors[0])
+                embedding_model = settings.ai_embedding_model
+        except (RuntimeError, httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Repository embedding is temporarily unavailable") from exc
+
     result = await session.execute(
         text("""
             INSERT INTO apps (
                 name, description, repository_url, default_branch, stars,
-                license, latest_commit_sha, indexed_at
+                license, latest_commit_sha, indexed_at, embedding, embedding_model
             )
             VALUES (
                 :name, :description, :repository_url, :default_branch, :stars,
-                :license, :commit_sha, now()
+                :license, :commit_sha, now(), CAST(:embedding AS vector), :embedding_model
             )
             ON CONFLICT (repository_url) DO UPDATE SET
                 name = EXCLUDED.name,
@@ -121,7 +151,9 @@ async def index_repository(
                 license = EXCLUDED.license,
                 latest_commit_sha = EXCLUDED.latest_commit_sha,
                 indexed_at = now(),
-                updated_at = now()
+                updated_at = now(),
+                embedding = COALESCE(EXCLUDED.embedding, apps.embedding),
+                embedding_model = COALESCE(EXCLUDED.embedding_model, apps.embedding_model)
             RETURNING id::text AS id
         """),
         {
@@ -132,6 +164,8 @@ async def index_repository(
             "stars": snapshot["stars"],
             "license": snapshot["license"],
             "commit_sha": snapshot["commit_sha"],
+            "embedding": embedding_literal,
+            "embedding_model": embedding_model,
         },
     )
     app_id = result.scalar_one()
@@ -187,25 +221,72 @@ async def index_repository(
 
 @router.post("/search", response_model=list[SearchResult], tags=["discovery"])
 async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(get_session)):
-    statement = text("""
-        SELECT id::text, name, description, repository_url,
-               ts_rank(search_document, websearch_to_tsquery('english', :query)) AS score
-        FROM apps
-        WHERE search_document @@ websearch_to_tsquery('english', :query)
-        ORDER BY score DESC, stars DESC
-        LIMIT :limit
-    """)
+    settings = get_settings()
+    embedding_literal = None
+    if settings.ai_provider != "none" and settings.ai_embedding_model:
+        try:
+            provider = get_ai_provider()
+            if provider is not None:
+                vectors = await provider.embed([payload.query])
+                if len(vectors) != 1:
+                    raise ValueError("Embedding provider returned an unexpected result count")
+                embedding_literal = _serialize_embedding(vectors[0])
+        except (RuntimeError, httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="Semantic search is temporarily unavailable") from exc
+
+    if embedding_literal is not None:
+        statement = text("""
+            WITH lexical AS (
+                SELECT id, ts_rank(search_document, websearch_to_tsquery('english', :query))::float AS score
+                FROM apps
+                WHERE search_document @@ websearch_to_tsquery('english', :query)
+            ),
+            semantic AS (
+                SELECT id, GREATEST(0, 1 - (embedding <=> CAST(:embedding AS vector)))::float AS score
+                FROM apps
+                WHERE embedding IS NOT NULL AND embedding_model = :embedding_model
+                ORDER BY embedding <=> CAST(:embedding AS vector)
+                LIMIT :limit
+            ),
+            ranked AS (
+                SELECT id, score * 0.65 AS score FROM lexical
+                UNION ALL
+                SELECT id, score * 0.35 AS score FROM semantic
+            )
+            SELECT apps.id::text AS id, apps.name, apps.description, apps.repository_url,
+                   SUM(ranked.score)::float AS score
+            FROM ranked JOIN apps ON apps.id = ranked.id
+            GROUP BY apps.id, apps.name, apps.description, apps.repository_url
+            ORDER BY score DESC
+            LIMIT :limit
+        """)
+        params = {
+            "query": payload.query,
+            "embedding": embedding_literal,
+            "embedding_model": settings.ai_embedding_model,
+            "limit": payload.limit,
+        }
+    else:
+        statement = text("""
+            SELECT id::text, name, description, repository_url,
+                   ts_rank(search_document, websearch_to_tsquery('english', :query)) AS score
+            FROM apps
+            WHERE search_document @@ websearch_to_tsquery('english', :query)
+            ORDER BY score DESC, stars DESC
+            LIMIT :limit
+        """)
+        params = {"query": payload.query, "limit": payload.limit}
+
     try:
-        rows = (await session.execute(statement, {"query": payload.query, "limit": payload.limit})).mappings()
+        rows = (await session.execute(statement, params)).mappings()
         return [SearchResult(**dict(row)) for row in rows]
     except Exception as exc:
         if "apps" in str(exc).lower() or "relation" in str(exc).lower():
             raise HTTPException(
                 status_code=503,
-                detail="Catalog schema is not initialized; apply migrations/001_initial.sql",
+                detail="Catalog schema is not initialized; apply the backend migrations",
             ) from exc
         raise
-
 
 @router.post("/repositories/inspect", response_model=InspectionResponse, tags=["inspection"])
 async def inspect_repository(payload: RepositoryRequest):
