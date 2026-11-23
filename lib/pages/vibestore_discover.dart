@@ -225,9 +225,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         final cached = await _api!.cachedInspection(appId);
         if (!mounted) return;
         setState(() {
-          _inspection = const JsonEncoder.withIndent('  ').convert(
-            cached['report'] ?? cached,
-          );
+          _inspection = const JsonEncoder.withIndent(
+            '  ',
+          ).convert(cached['report'] ?? cached);
           _notice = 'Loaded cached X-Ray report for $appName.';
         });
       });
