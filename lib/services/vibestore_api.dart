@@ -172,7 +172,6 @@ class VibeStoreApi {
     return decoded;
   }
 
-
   Future<Map<String, dynamic>> enqueueRepositoryIndex(String repositoryUrl) =>
       _post('repositories/index-jobs', {
         'repository_url': repositoryUrl.trim(),
@@ -192,7 +191,9 @@ class VibeStoreApi {
         .timeout(_timeout);
     final decoded = _decodeResponse(response);
     if (decoded is! Map<String, dynamic>) {
-      throw const VibeStoreApiException('The indexing job response was invalid.');
+      throw const VibeStoreApiException(
+        'The indexing job response was invalid.',
+      );
     }
     return decoded;
   }
