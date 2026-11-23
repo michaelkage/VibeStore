@@ -1,6 +1,8 @@
 import json
 from datetime import UTC, datetime
 
+import httpx
+
 from app.ai.openai_compatible import get_ai_provider
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
 from app.services.manifest import inspect_manifest
@@ -41,7 +43,7 @@ def build_static_inspection(files: dict[str, str]) -> dict:
     lowered = [path.lower() for path in paths]
     for needles, label in checks:
         if any(
-            (needle in path if needle.endswith("/") else needle in path)
+            needle in path
             for path in lowered
             for needle in needles
         ):
@@ -109,7 +111,7 @@ async def enrich_inspection(report: dict, files: dict[str, str]) -> dict:
             report["ai_summary_status"] = "available"
         else:
             report["ai_summary_status"] = "empty_response"
-    except Exception:
+    except (httpx.HTTPError, RuntimeError, ValueError, KeyError, TypeError):
         # A provider outage must not invalidate deterministic inspection evidence.
         report["ai_summary_status"] = "unavailable"
     return report
