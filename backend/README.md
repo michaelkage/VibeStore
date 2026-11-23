@@ -18,7 +18,9 @@ docker compose up --build -d
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/001_initial.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authentication.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql\ndocker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
 ``
 
 OpenAPI: http://localhost:8000/docs  
@@ -30,7 +32,10 @@ Health: http://localhost:8000/health
 - `POST /api/v1/auth/register`: create an account and issue a short-lived access token.
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
-- `POST /api/v1/repositories/index`: authenticated GitHub repository indexing with bounded README/Gradle/manifest retrieval and catalog persistence. Apply migrations `003_repository_submissions.sql` and `004_semantic_embeddings.sql` first.
+- `POST /api/v1/repositories/index`: synchronous authenticated indexing endpoint retained for compatibility.
+- `POST /api/v1/repositories/index-jobs`: enqueue authenticated repository indexing and return a job ID (HTTP 202).
+- `GET /api/v1/repositories/jobs/{job_id}`: poll the caller-owned job state, attempt count, error and resulting catalog app ID.
+- `POST /api/v1/webhooks/github`: signed GitHub webhook endpoint; queues default-branch `push` deliveries and deduplicates delivery IDs.
 - `GET /api/v1/repositories/mine`: list only the authenticated user's repository submissions.
 - `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
@@ -55,6 +60,14 @@ Use the returned `access_token` as `Authorization: Bearer <token>` for `/auth/me
 - Login failures use a generic error response; Argon2 hashing/verification runs off the async event loop and unknown-account attempts use a dummy hash.
 - Registration and login are rate-limited to 10 attempts per client IP per 15-minute Redis window. If Redis is unavailable, authentication attempts fail closed with HTTP 503.
 - Access tokens are short-lived; refresh-token rotation, email verification, password reset, account recovery and MFA are not yet implemented. Do not expose this service to the public internet as a production identity provider until these controls are added.
+
+## Background indexing and GitHub webhooks
+
+The API enqueues jobs in Redis using Arq; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries transient failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker also stores configured embeddings when AI is enabled. Apply `005_async_repository_indexing.sql` after migrations `001` through `004`.
+
+Configure a random `GITHUB_WEBHOOK_SECRET` in `.env`, then register a GitHub repository webhook targeting `https://YOUR_API_HOST/api/v1/webhooks/github`, content type `application/json`, with the `push` event selected. The endpoint verifies `X-Hub-Signature-256` against the exact raw request body using constant-time comparison, caps payloads at 1 MB, ignores non-push and non-default-branch events, and deduplicates `X-GitHub-Delivery`. Only public canonical GitHub repository URLs are accepted.
+
+Run the API and worker with `docker compose up --build -d`; check worker logs with `docker compose logs -f worker`.
 
 ## AI provider adapter
 
