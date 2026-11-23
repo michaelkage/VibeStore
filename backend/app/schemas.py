@@ -32,11 +32,33 @@ class ManifestFinding(BaseModel):
     explanation: str
 
 
+class SDKDetection(BaseModel):
+    name: str
+    category: str
+    file_path: str
+    line_number: int
+    evidence: str
+    confidence: str
+    explanation: str
+
+
+class StaticManifestFinding(BaseModel):
+    category: str
+    severity: str
+    title: str
+    file_path: str
+    line_number: int
+    evidence: str
+    explanation: str
+
+
 class InspectionResponse(BaseModel):
     repository: str
     manifest_found: bool
     package_name: str | None = None
     permissions: list[ManifestFinding]
+    sdk_detections: list[SDKDetection] = Field(default_factory=list)
+    manifest_warnings: list[StaticManifestFinding] = Field(default_factory=list)
     limitations: list[str]
 
 
