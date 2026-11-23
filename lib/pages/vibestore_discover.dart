@@ -102,6 +102,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   });
 
   Future<void> _search() => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
     final results = await _api!.search(_queryController.text);
     if (!mounted) return;
     setState(() {
