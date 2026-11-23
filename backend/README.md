@@ -20,7 +20,6 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authen
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
 ``
 
 OpenAPI: http://localhost:8000/docs  
