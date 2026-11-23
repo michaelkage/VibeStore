@@ -20,7 +20,7 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authen
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql\ndocker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
 ```
 
 OpenAPI: http://localhost:8000/docs  
@@ -39,7 +39,7 @@ Health: http://localhost:8000/health
 - `GET /api/v1/repositories/mine`: list only the authenticated user's repository submissions.
 - `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
-- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.
+- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.\n- `GET /api/v1/apps/{app_id}/inspection`: return the latest cached inspection report for an indexed catalog app, including the source commit SHA.
 
 ## Authentication security
 
@@ -53,7 +53,7 @@ Health: http://localhost:8000/health
 
 ## Background indexing, refresh and reconciliation
 
-The API enqueues jobs in Redis using Arq; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled.
+The API enqueues jobs in Redis using Arq; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled. Each successful indexing pass also stores a commit-keyed static inspection report. When an AI provider is configured, the worker adds a short evidence-constrained explanation; provider errors do not discard deterministic findings or fail repository indexing.
 
 The same worker runs a scheduled reconciliation every 15 minutes and once at startup. It:
 
@@ -62,7 +62,7 @@ The same worker runs a scheduled reconciliation every 15 minutes and once at sta
 3. Repairs durable `queued` jobs by re-enqueuing their deterministic Arq IDs, covering the database-commit/Redis-enqueue failure window.
 4. Recovers jobs left `running` beyond `INDEXING_STALE_JOB_MINUTES` (default 15) after a worker interruption, then re-enqueues them.
 
-The scheduler does not delete catalog entries when a repository is unavailable; failed refreshes retain the last known-good catalog snapshot and record the job error. Refresh is bounded by `CATALOG_REFRESH_BATCH_SIZE` (default 50) per tick; queued recovery is bounded by `INDEXING_RECONCILE_BATCH_SIZE` (default 100). Apply `006_catalog_refresh_reconciliation.sql` after migrations `001` through `005`.
+The scheduler does not delete catalog entries when a repository is unavailable; failed refreshes retain the last known-good catalog snapshot and record the job error. Refresh is bounded by `CATALOG_REFRESH_BATCH_SIZE` (default 50) per tick; queued recovery is bounded by `INDEXING_RECONCILE_BATCH_SIZE` (default 100). Apply `006_catalog_refresh_reconciliation.sql` after migrations `001` through `005`, then apply `007_cached_inspection_reports.sql`.
 
 Configure a random `GITHUB_WEBHOOK_SECRET` in `.env`, then register a GitHub repository webhook targeting `https://YOUR_API_HOST/api/v1/webhooks/github`, content type `application/json`, with the `push` event selected. The endpoint verifies `X-Hub-Signature-256` against the exact raw request body using constant-time comparison, caps payloads at 1 MB, ignores non-push and non-default-branch events, and deduplicates `X-GitHub-Delivery`. A repeated delivery can recover an enqueue that previously failed because Redis was unavailable. Only public canonical GitHub repository URLs are accepted.
 
@@ -74,7 +74,7 @@ A provider-neutral `AIProvider` interface and OpenAI-compatible adapter are incl
 
 ## Repository inspection limits
 
-Repository files are fetched as data and never executed. The indexing endpoint accepts canonical GitHub repository URLs only, rejects truncated repository trees, caps retrieval to 12 candidate files and 1 MB per file, and stores bounded text excerpts. Current static inspection checks Android manifest permission declarations, cleartext-traffic/exported-component flags, and a curated set of analytics/attribution/crash SDK dependencies in Gradle files. SDK matches are dependency declarations, not proof of initialization or data transmission. Manifest warnings are line-level heuristics that require manual review. A declared permission does not prove runtime use. Private repositories are rejected even when a token is configured; `GITHUB_TOKEN` currently raises the public GitHub API rate limit only. GitLab/Codeberg integrations, tracker detection, architecture analysis and evidence-backed AI reports are not implemented yet.
+Repository files are fetched as data and never executed. The indexing endpoint accepts canonical GitHub repository URLs only, rejects truncated repository trees, caps retrieval to 12 candidate files and 1 MB per file, and stores bounded text excerpts. Current static inspection checks Android manifest permission declarations, cleartext-traffic/exported-component flags, a curated set of analytics/attribution/crash SDK dependencies in Gradle files, and coarse architecture indicators from repository paths. Reports are cached by app and source commit SHA and can be read from the cached inspection endpoint. When configured, the AI provider writes a concise explanation based only on extracted static evidence; the deterministic findings remain authoritative. SDK matches are dependency declarations, not proof of initialization or data transmission. Manifest warnings are line-level heuristics that require manual review. A declared permission does not prove runtime use. These reports are not a complete call-graph, data-flow or runtime tracker audit. Private repositories are rejected even when a token is configured; `GITHUB_TOKEN` currently raises the public GitHub API rate limit only. GitLab/Codeberg integrations and runtime tracker detection are not implemented.
 
 ## Remaining platform work
 
