@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -42,8 +41,8 @@ async def test_index_worker_marks_transient_failure_retrying(monkeypatch):
 
     assert session.rollback.await_count == 1
     assert session.commit.await_count == 2
-    retry_update = session.execute.await_args_list[1].args[0].text
-    assert "'retrying'" in retry_update or ":status" in retry_update
+    retry_update = session.execute.await_args_list[1].args[1]
+    assert retry_update["status"] == "retrying"
 
 
 @pytest.mark.asyncio
@@ -64,5 +63,5 @@ async def test_index_worker_stops_retrying_after_max_attempts(monkeypatch):
 
     assert session.execute.await_count == 2
     assert session.commit.await_count == 2
-    final_update = session.execute.await_args_list[1].args[0].text
-    assert ":status" in final_update
+    final_update = session.execute.await_args_list[1].args[1]
+    assert final_update["status"] == "failed"
