@@ -1,11 +1,13 @@
 from typing import ClassVar
 
-from arq import Retry
+from arq import Retry, cron
 from arq.connections import RedisSettings
 from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import SessionLocal, dispose_engine
+from app.queue import QUEUE_NAME
+from app.scheduler import reconcile_catalog
 from app.services.indexing import index_repository_snapshot
 
 MAX_ATTEMPTS = 5
@@ -66,7 +68,10 @@ async def shutdown(ctx):
 
 class WorkerSettings:
     functions: ClassVar[list] = [index_repository_job]
-    queue_name = "vibestore:repository-index"
+    cron_jobs: ClassVar[list] = [
+        cron(reconcile_catalog, minute={0, 15, 30, 45}, run_at_startup=True),
+    ]
+    queue_name = QUEUE_NAME
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
     on_startup = startup
     on_shutdown = shutdown
