@@ -17,6 +17,7 @@ Put the generated value in `JWT_SECRET_KEY` in `.env`, then start the services:
 docker compose up --build -d
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/001_initial.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authentication.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
 ``
 
 OpenAPI: http://localhost:8000/docs  
@@ -28,6 +29,7 @@ Health: http://localhost:8000/health
 - `POST /api/v1/auth/register`: create an account and issue a short-lived access token.
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
+- `POST /api/v1/repositories/index`: authenticated GitHub repository indexing with bounded README/manifest retrieval and catalog persistence. Apply migration `003_repository_submissions.sql` first.
 - `POST /api/v1/search`: PostgreSQL full-text app catalog search.
 - `POST /api/v1/repositories/inspect`: fetch a public GitHub repository's Android manifest and report declared permissions.
 
@@ -56,7 +58,7 @@ A provider-neutral `AIProvider` interface and OpenAI-compatible adapter are incl
 
 ## Repository inspection limits
 
-Repository files are fetched as data and never executed. Current analysis checks Android manifest permission declarations only. A declared permission does not prove runtime use. Private GitHub repository support requires a configured token with the appropriate repository permissions. GitLab/Codeberg integrations, tracker detection, architecture analysis and evidence-backed AI reports are not implemented yet.
+Repository files are fetched as data and never executed. The indexing endpoint accepts canonical GitHub repository URLs only, rejects truncated repository trees, caps retrieval to 12 candidate files and 1 MB per file, and stores bounded text excerpts. Current analysis checks Android manifest permission declarations only. A declared permission does not prove runtime use. Private GitHub repository support requires a configured token with the appropriate repository permissions. GitLab/Codeberg integrations, tracker detection, architecture analysis and evidence-backed AI reports are not implemented yet.
 
 ## Remaining platform work
 
