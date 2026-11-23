@@ -89,7 +89,7 @@ class VibeStoreApi {
       'email': email.trim(),
       'password': password,
     });
-    await _saveToken(response);
+    _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
   }
 
