@@ -18,6 +18,7 @@ docker compose up --build -d
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/001_initial.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authentication.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
 ``
 
 OpenAPI: http://localhost:8000/docs  
@@ -30,7 +31,7 @@ Health: http://localhost:8000/health
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
 - `POST /api/v1/repositories/index`: authenticated GitHub repository indexing with bounded README/manifest retrieval and catalog persistence. Apply migration `003_repository_submissions.sql` first.
-- `POST /api/v1/search`: PostgreSQL full-text app catalog search.
+- `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
 - `POST /api/v1/repositories/inspect`: fetch a public GitHub repository's Android manifest and report declared permissions.
 
 Example registration:
@@ -54,7 +55,7 @@ Use the returned `access_token` as `Authorization: Bearer <token>` for `/auth/me
 
 ## AI provider adapter
 
-A provider-neutral `AIProvider` interface and OpenAI-compatible adapter are included. Configure `AI_PROVIDER=openai-compatible`, `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_EMBEDDING_MODEL`. Use `AI_PROVIDER=none` to disable model calls. AI calls are not yet connected to user-facing workflows.
+A provider-neutral `AIProvider` interface and OpenAI-compatible adapter are included. Configure `AI_PROVIDER=openai-compatible`, `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and `AI_EMBEDDING_MODEL` to generate and store embeddings during repository indexing and to enable hybrid search. Use `AI_PROVIDER=none` to disable model calls. The vector column intentionally has no fixed dimension so compatible providers can supply different embedding sizes; similarity ranking currently uses a filtered sequential scan, not an approximate-nearest-neighbor index. Keep one stable embedding model/dimension per configured model name.
 
 ## Repository inspection limits
 
