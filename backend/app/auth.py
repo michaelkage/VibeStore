@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -13,6 +14,7 @@ from app.config import get_settings
 from app.db import get_session
 
 _password_hash = PasswordHash.recommended()
+_DUMMY_PASSWORD_HASH = _password_hash.hash("vibestore-invalid-login-sentinel")
 _bearer = HTTPBearer(auto_error=False)
 
 
