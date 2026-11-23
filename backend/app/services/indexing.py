@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai.openai_compatible import get_ai_provider
 from app.config import get_settings
 from app.services.github import fetch_repository_snapshot
+from app.services.inspection import create_inspection_report
+import json
 
 
 async def index_repository_snapshot(
@@ -111,6 +113,23 @@ async def index_repository_snapshot(
                 "content_excerpt": item["content"][:20_000],
             },
         )
+    inspection_report = await create_inspection_report(
+        {item["path"]: item["content"] for item in snapshot["files"]}
+    )
+    await session.execute(
+        text("""
+            INSERT INTO inspections (app_id, commit_sha, report)
+            VALUES (CAST(:app_id AS uuid), :commit_sha, CAST(:report AS jsonb))
+            ON CONFLICT (app_id, commit_sha) DO UPDATE SET
+                report = EXCLUDED.report,
+                created_at = now()
+        """),
+        {
+            "app_id": app_id,
+            "commit_sha": snapshot["commit_sha"],
+            "report": json.dumps(inspection_report),
+        },
+    )
     if user_id is not None:
         await session.execute(
             text("""
