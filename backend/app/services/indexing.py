@@ -51,6 +51,10 @@ async def index_repository_snapshot(
             embedding_literal = "[" + ",".join(format(value, ".9g") for value in values) + "]"
             embedding_model = settings.ai_embedding_model
 
+    inspection_report = await create_inspection_report(
+        {item["path"]: item["content"] for item in snapshot["files"]}
+    )
+
     result = await session.execute(
         text("""
             INSERT INTO apps (
@@ -113,9 +117,6 @@ async def index_repository_snapshot(
                 "content_excerpt": item["content"][:20_000],
             },
         )
-    inspection_report = await create_inspection_report(
-        {item["path"]: item["content"] for item in snapshot["files"]}
-    )
     await session.execute(
         text("""
             INSERT INTO inspections (app_id, commit_sha, report)
