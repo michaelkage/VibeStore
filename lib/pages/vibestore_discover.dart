@@ -119,7 +119,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     if (!mounted) return;
     setState(() {
       _submissions = repositories;
-      _notice = '${repositories.length} submitted repository/repositories loaded.';
+      _notice =
+          '${repositories.length} submitted repository/repositories loaded.';
     });
   });
 
@@ -130,7 +131,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     if (!mounted) return;
     setState(() {
       _submissions = repositories;
-      _notice = 'Indexed ${result['name']} (${result['indexed_files']} source files).';
+      _notice =
+          'Indexed ${result['name']} (${result['indexed_files']} source files).';
     });
   });
 
@@ -140,7 +142,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     if (!mounted) return;
     setState(() {
       _submissions = repositories;
-      _notice = 'Removed $name from your collection. The shared catalog entry is unchanged.';
+      _notice =
+          'Removed $name from your collection. The shared catalog entry is unchanged.';
     });
   });
 
@@ -171,7 +174,10 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                 Icon(icon),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+                  child: Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
               ],
             ),
@@ -258,22 +264,22 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                     keyboardType: TextInputType.emailAddress,
                   ),
                   const SizedBox(height: 12),
-                  _textField(
-                    _passwordController,
-                    'Password',
-                    obscure: true,
-                  ),
+                  _textField(_passwordController, 'Password', obscure: true),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: [
                       FilledButton(
-                        onPressed: _busy ? null : () => _authenticate(createAccount: false),
+                        onPressed: _busy
+                            ? null
+                            : () => _authenticate(createAccount: false),
                         child: const Text('Sign in'),
                       ),
                       OutlinedButton(
-                        onPressed: _busy ? null : () => _authenticate(createAccount: true),
+                        onPressed: _busy
+                            ? null
+                            : () => _authenticate(createAccount: true),
                         child: const Text('Create account'),
                       ),
                     ],
@@ -291,20 +297,29 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: OutlinedButton.icon(
-                      onPressed: _busy || !api.isAuthenticated ? null : _loadMyRepositories,
+                      onPressed: _busy || !api.isAuthenticated
+                          ? null
+                          : _loadMyRepositories,
                       icon: const Icon(Icons.refresh_rounded),
                       label: const Text('Refresh collection'),
                     ),
                   ),
                   if (!api.isAuthenticated)
-                    const Text('Sign in to view and manage your submitted repositories.')
+                    const Text(
+                      'Sign in to view and manage your submitted repositories.',
+                    )
                   else if (_submissions.isEmpty)
-                    const Text('No submitted repositories loaded. Refresh to check your collection.')
+                    const Text(
+                      'No submitted repositories loaded. Refresh to check your collection.',
+                    )
                   else
                     for (final repository in _submissions)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: Text(repository['name']?.toString() ?? 'Unnamed repository'),
+                        title: Text(
+                          repository['name']?.toString() ??
+                              'Unnamed repository',
+                        ),
                         subtitle: Text(
                           [
                             repository['repository_url']?.toString() ?? '',
@@ -316,9 +331,10 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                           onPressed: _busy
                               ? null
                               : () => _removeSubmission(
-                                    repository['id'].toString(),
-                                    repository['name']?.toString() ?? 'repository',
-                                  ),
+                                  repository['id'].toString(),
+                                  repository['name']?.toString() ??
+                                      'repository',
+                                ),
                           icon: const Icon(Icons.remove_circle_outline_rounded),
                         ),
                         isThreeLine: true,
@@ -344,7 +360,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                     for (final result in _results)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        title: Text(result['name']?.toString() ?? 'Unnamed app'),
+                        title: Text(
+                          result['name']?.toString() ?? 'Unnamed app',
+                        ),
                         subtitle: Text(
                           [
                             result['description']?.toString() ?? '',
@@ -358,45 +376,53 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       ),
                   ],
                 ]),
-                _section('Inspect or index a repository', Icons.manage_search_rounded, [
-                  _textField(
-                    _repositoryController,
-                    'Public GitHub repository URL',
-                    hint: 'https://github.com/owner/repository',
-                    keyboardType: TextInputType.url,
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      FilledButton.tonal(
-                        onPressed: _busy || !api.isAuthenticated ? null : _indexRepository,
-                        child: const Text('Index repository'),
-                      ),
-                      OutlinedButton(
-                        onPressed: _busy ? null : _inspectRepository,
-                        child: const Text('Inspect repository'),
+                _section(
+                  'Inspect or index a repository',
+                  Icons.manage_search_rounded,
+                  [
+                    _textField(
+                      _repositoryController,
+                      'Public GitHub repository URL',
+                      hint: 'https://github.com/owner/repository',
+                      keyboardType: TextInputType.url,
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        FilledButton.tonal(
+                          onPressed: _busy || !api.isAuthenticated
+                              ? null
+                              : _indexRepository,
+                          child: const Text('Index repository'),
+                        ),
+                        OutlinedButton(
+                          onPressed: _busy ? null : _inspectRepository,
+                          child: const Text('Inspect repository'),
+                        ),
+                      ],
+                    ),
+                    if (_inspection != null) ...[
+                      const Divider(height: 24),
+                      SelectableText(
+                        _inspection!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontFamily: 'monospace',
+                        ),
                       ),
                     ],
-                  ),
-                  if (_inspection != null) ...[
-                    const Divider(height: 24),
-                    SelectableText(
-                      _inspection!,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        fontFamily: 'monospace',
-                      ),
-                    ),
                   ],
-                ]),
+                ),
                 if (_busy) const LinearProgressIndicator(),
                 if (_notice != null)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(
                       _notice!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.primary),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
                     ),
                   ),
                 if (_error != null)
@@ -404,7 +430,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(
                       _error!,
-                      style: TextStyle(color: Theme.of(context).colorScheme.error),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
                     ),
                   ),
               ],
