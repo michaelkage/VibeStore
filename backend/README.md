@@ -1,37 +1,65 @@
 # VibeStore API
 
-FastAPI service foundation for VibeStore's Android discovery and repository-intelligence workflows. This is separate from the existing Flutter app and does not replace its app-source or installation pipeline.
+FastAPI service for VibeStore discovery and repository intelligence. The service is separate from the existing Flutter app and preserves its app-source and installation pipeline.
 
-## Run locally
+## Local development
+
+Requirements: Docker Compose and Python 3.11+ (Python is needed only for local tests outside Docker).
 
 ```bash
 cp .env.example .env
-docker compose up --build
-```
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+``
 
-Apply the initial schema after PostgreSQL starts:
+Put the generated value in `JWT_SECRET_KEY` in `.env`, then start the services:
 
 ```bash
+docker compose up --build -d
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/001_initial.sql
-```
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authentication.sql
+``
 
 OpenAPI: http://localhost:8000/docs  
 Health: http://localhost:8000/health
 
-## Endpoints currently implemented
+## API
 
 - `GET /health`: database-aware service health.
-- `POST /api/v1/search`: PostgreSQL full-text catalog search.
-- `POST /api/v1/repositories/inspect`: fetches public GitHub repository metadata/files and reports Android manifest permission declarations.
+- `POST /api/v1/auth/register`: create an account and issue a short-lived access token.
+- `POST /api/v1/auth/token`: exchange email/password for an access token.
+- `GET /api/v1/auth/me`: return the authenticated account.
+- `POST /api/v1/search`: PostgreSQL full-text app catalog search.
+- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository's Android manifest and report declared permissions.
 
-Inspection is static only. A declared permission does not prove runtime use. Repository source is treated as data and never executed.
+Example registration:
 
-## AI adapters
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"developer@example.com","password":"use-a-long-unique-password"}'
+```
 
-A provider-neutral `AIProvider` interface and OpenAI-compatible adapter are included. Configure `AI_PROVIDER=openai-compatible`, `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_EMBEDDING_MODEL`. Use `AI_PROVIDER=none` to disable model calls.
+Use the returned `access_token` as `Authorization: Bearer <token>` for `/auth/me`.
 
-## Important remaining platform work
+## Authentication security
 
-The schema enables pgvector but embedding ingestion/vector ranking, catalog indexing workers, authentication/authorization, webhook signature verification, Redis queue consumers, full X-Ray/tracker analysis, remix orchestration, isolated Gradle build workers, separate signing service, artifact storage, push notifications and Flutter UI integration are not implemented by this foundation. Do not expose remix operations until auth and ownership checks exist.
+- Passwords are hashed with Argon2 through pwdlib; plaintext passwords are never stored.
+- Access tokens are signed HS256 JWTs with issuer, issue time and expiry claims.
+- `JWT_SECRET_KEY` must be a unique random value of at least 32 characters. Never commit it.
+- Account email addresses are normalized to lowercase and protected by a unique database index.
+- Login failures use a generic error response.
+- Access tokens are short-lived; refresh-token rotation, email verification, password reset, account recovery, MFA, and authentication rate limiting are not yet implemented. Do not expose this service to the public internet as a production identity provider until these controls are added.
 
-Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, verify webhook signatures, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside the API and build worker.
+## AI provider adapter
+
+A provider-neutral `AIProvider` interface and OpenAI-compatible adapter are included. Configure `AI_PROVIDER=openai-compatible`, `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`, and optionally `AI_EMBEDDING_MODEL`. Use `AI_PROVIDER=none` to disable model calls. AI calls are not yet connected to user-facing workflows.
+
+## Repository inspection limits
+
+Repository files are fetched as data and never executed. Current analysis checks Android manifest permission declarations only. A declared permission does not prove runtime use. Private GitHub repository support requires a configured token with the appropriate repository permissions. GitLab/Codeberg integrations, tracker detection, architecture analysis and evidence-backed AI reports are not implemented yet.
+
+## Remaining platform work
+
+The initial schema enables pgvector and records catalog, repository file, inspection and remix-job metadata. Automated catalog ingestion, embeddings and vector ranking, background queue consumers, GitHub webhook signature verification, comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and Flutter discovery/X-Ray/Remix screens remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
+
+Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, verify webhook signatures, configure backup/restore, add observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
