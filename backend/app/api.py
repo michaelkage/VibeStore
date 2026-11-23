@@ -569,6 +569,37 @@ async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(ge
             ) from exc
         raise
 
+@router.get(
+    "/apps/{app_id}/inspection",
+    response_model=dict,
+    tags=["inspection"],
+)
+async def get_cached_inspection(
+    app_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        text("""
+            SELECT inspections.commit_sha, inspections.report, inspections.created_at
+            FROM inspections
+            JOIN apps ON apps.id = inspections.app_id
+            WHERE apps.id = CAST(:app_id AS uuid)
+            ORDER BY inspections.created_at DESC
+            LIMIT 1
+        """),
+        {"app_id": str(app_id)},
+    )
+    inspection = result.mappings().first()
+    if inspection is None:
+        raise HTTPException(status_code=404, detail="No cached inspection is available")
+    return {
+        "app_id": str(app_id),
+        "commit_sha": inspection["commit_sha"],
+        "cached_at": inspection["created_at"],
+        "report": inspection["report"],
+    }
+
+
 @router.post("/repositories/inspect", response_model=InspectionResponse, tags=["inspection"])
 async def inspect_repository(payload: RepositoryRequest):
     try:
