@@ -19,11 +19,9 @@ class VibeStoreApi {
     required SharedPreferences preferences,
     required http.Client client,
     required String baseUrl,
-    required String? accessToken,
   }) : _preferences = preferences,
        _client = client,
-       _baseUrl = baseUrl,
-       _accessToken = accessToken;
+       _baseUrl = baseUrl;
 
   static const _baseUrlKey = 'vibestore.api.baseUrl';
   static const _timeout = Duration(seconds: 30);
@@ -42,7 +40,6 @@ class VibeStoreApi {
       preferences: preferences,
       client: http.Client(),
       baseUrl: preferences.getString(_baseUrlKey) ?? '',
-      accessToken: null,
     );
   }
 
