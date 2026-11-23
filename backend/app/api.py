@@ -17,6 +17,7 @@ from app.auth import (
 )
 from app.config import get_settings
 from app.db import get_session
+from app.redis_client import enforce_auth_rate_limit
 from app.schemas import (
     InspectionResponse,
     IndexRepositoryResponse,
@@ -45,7 +46,13 @@ def _serialize_embedding(values: list[float]) -> str:
     return "[" + ",".join(format(value, ".9g") for value in normalized) + "]"
 
 
-@router.post("/auth/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED, tags=["authentication"])
+@router.post(
+    "/auth/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    tags=["authentication"],
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
 async def register(payload: RegisterRequest, session: AsyncSession = Depends(get_session)):
     settings = get_settings()
     if len(settings.jwt_secret_key) < 32:
@@ -74,7 +81,12 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
     )
 
 
-@router.post("/auth/token", response_model=TokenResponse, tags=["authentication"])
+@router.post(
+    "/auth/token",
+    response_model=TokenResponse,
+    tags=["authentication"],
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
 async def login(payload: LoginRequest, session: AsyncSession = Depends(get_session)):
     settings = get_settings()
     if len(settings.jwt_secret_key) < 32:
