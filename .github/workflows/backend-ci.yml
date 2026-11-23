@@ -19,5 +19,6 @@ jobs:
           cache: pip
           cache-dependency-path: backend/pyproject.toml
       - run: pip install -e ".[dev]"
-      - run: python -m compileall -q app
-      - run: ruff check app
+      - run: python -m compileall -q app tests
+      - run: ruff check app tests
+      - run: pytest -q
