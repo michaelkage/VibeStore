@@ -14,6 +14,7 @@ import 'package:obtainium/custom_errors.dart';
 import 'package:obtainium/utils/locale_utils.dart';
 import 'package:obtainium/main.dart';
 import 'package:obtainium/pages/app.dart';
+import 'package:obtainium/pages/vibestore_discover.dart';
 import 'package:obtainium/providers/apps_provider.dart';
 import 'package:obtainium/providers/notifications_provider.dart';
 import 'package:obtainium/providers/settings_provider.dart';
@@ -1335,6 +1336,17 @@ class AppsPageState extends State<AppsPage> {
                           icon: const Icon(Icons.refresh_rounded),
                           tooltip: tr('refresh'),
                         ),
+                      IconButton(
+                        onPressed: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => const VibeStoreDiscoverPage(),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.travel_explore_rounded),
+                        tooltip: 'VibeStore discovery',
+                      ),
                       IconButton(
                         onPressed: () {
                           NavHelper.pushSettingsPage(context);
