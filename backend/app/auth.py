@@ -1,5 +1,4 @@
-import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -30,7 +29,7 @@ def create_access_token(user_id: str) -> str:
     settings = get_settings()
     if len(settings.jwt_secret_key) < 32:
         raise RuntimeError("JWT_SECRET_KEY must contain at least 32 characters")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires = now + timedelta(minutes=settings.jwt_access_token_minutes)
     return jwt.encode(
         {"sub": user_id, "iss": settings.jwt_issuer, "iat": now, "exp": expires},
