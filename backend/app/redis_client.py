@@ -38,3 +38,12 @@ async def enforce_auth_rate_limit(request: Request) -> None:
         raise HTTPException(status_code=503, detail="Authentication rate limiter is unavailable") from exc
     if count > 10:
         raise HTTPException(status_code=429, detail="Too many authentication attempts; retry later")
+
+
+async def redis_is_healthy() -> bool:
+    if _client is None:
+        return False
+    try:
+        return bool(await _client.ping())
+    except RedisError:
+        return False
