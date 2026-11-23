@@ -40,7 +40,7 @@ class FakeSession:
     def __init__(self):
         self.execute = AsyncMock(side_effect=[
             FakeResult(rows=[{"id": "recovered", "repository_url": "https://github.com/a/b"}]),
-            FakeResult(rows=[]),
+            FakeResult(rows=[{"id": "recovered", "repository_url": "https://github.com/a/b"}]),
             FakeResult(rows=[{"id": "app-1", "repository_url": "https://github.com/c/d"}]),
             FakeResult(scalar=True),
             FakeResult(scalar=None),
