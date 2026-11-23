@@ -1,3 +1,4 @@
+import json
 import math
 
 from sqlalchemy import text
@@ -7,7 +8,6 @@ from app.ai.openai_compatible import get_ai_provider
 from app.config import get_settings
 from app.services.github import fetch_repository_snapshot
 from app.services.inspection import create_inspection_report
-import json
 
 
 async def index_repository_snapshot(
