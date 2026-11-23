@@ -102,6 +102,65 @@ class VibeStoreApi {
         .toList(growable: false);
   }
 
+
+  Future<List<Map<String, dynamic>>> myRepositories() async {
+    if (_baseUrl.isEmpty) {
+      throw const VibeStoreApiException('Configure the VibeStore API address first.');
+    }
+    final response = await _client
+        .get(
+          Uri.parse('$_baseUrl/api/v1/repositories/mine'),
+          headers: _authorizedHeaders(),
+        )
+        .timeout(_timeout);
+    final decoded = _decodeResponse(response);
+    if (decoded is! List) {
+      throw const VibeStoreApiException('The repository collection response was invalid.');
+    }
+    return decoded
+        .map((value) => Map<String, dynamic>.from(value as Map))
+        .toList(growable: false);
+  }
+
+  Future<void> removeMyRepository(String appId) async {
+    if (_baseUrl.isEmpty) {
+      throw const VibeStoreApiException('Configure the VibeStore API address first.');
+    }
+    final response = await _client
+        .delete(
+          Uri.parse('$_baseUrl/api/v1/repositories/mine/$appId'),
+          headers: _authorizedHeaders(),
+        )
+        .timeout(_timeout);
+    if (response.statusCode == 204) return;
+    _decodeResponse(response);
+  }
+
+  Map<String, String> _authorizedHeaders() {
+    final headers = <String, String>{'Accept': 'application/json'};
+    if (_accessToken case final token?) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+    return headers;
+  }
+
+  dynamic _decodeResponse(http.Response response) {
+    dynamic decoded;
+    try {
+      decoded = response.body.isEmpty ? null : jsonDecode(response.body);
+    } on FormatException {
+      decoded = null;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final detail = decoded is Map ? decoded['detail'] : null;
+      throw VibeStoreApiException(
+        detail is String ? detail : 'VibeStore API request failed (${response.statusCode}).',
+        statusCode: response.statusCode,
+      );
+    }
+    return decoded;
+  }
+
   Future<Map<String, dynamic>> indexRepository(String repositoryUrl) =>
       _post('repositories/index', {'repository_url': repositoryUrl.trim()});
 
