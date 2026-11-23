@@ -19,6 +19,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
 
   VibeStoreApi? _api;
   List<Map<String, dynamic>> _results = [];
+  List<Map<String, dynamic>> _submissions = [];
   String? _inspection;
   String? _notice;
   String? _error;
@@ -84,6 +85,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     setState(() {
       _results = [];
       _inspection = null;
+      _submissions = [];
       _notice = 'API address saved. Sign in to index repositories.';
     });
   });
@@ -111,12 +113,34 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     });
   });
 
+  Future<void> _loadMyRepositories() => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final repositories = await _api!.myRepositories();
+    if (!mounted) return;
+    setState(() {
+      _submissions = repositories;
+      _notice = '${repositories.length} submitted repository/repositories loaded.';
+    });
+  });
+
   Future<void> _indexRepository() => _run(() async {
     await _api!.configureBaseUrl(_baseUrlController.text);
     final result = await _api!.indexRepository(_repositoryController.text);
+    final repositories = await _api!.myRepositories();
     if (!mounted) return;
     setState(() {
+      _submissions = repositories;
       _notice = 'Indexed ${result['name']} (${result['indexed_files']} source files).';
+    });
+  });
+
+  Future<void> _removeSubmission(String appId, String name) => _run(() async {
+    await _api!.removeMyRepository(appId);
+    final repositories = await _api!.myRepositories();
+    if (!mounted) return;
+    setState(() {
+      _submissions = repositories;
+      _notice = 'Removed $name from your collection. The shared catalog entry is unchanged.';
     });
   });
 
@@ -261,6 +285,44 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         : 'Sign in to submit repositories. Your access token stays in memory and is not written to preferences.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                ]),
+
+                _section('My repositories', Icons.folder_open_outlined, [
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy || !api.isAuthenticated ? null : _loadMyRepositories,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Refresh collection'),
+                    ),
+                  ),
+                  if (!api.isAuthenticated)
+                    const Text('Sign in to view and manage your submitted repositories.')
+                  else if (_submissions.isEmpty)
+                    const Text('No submitted repositories loaded. Refresh to check your collection.')
+                  else
+                    for (final repository in _submissions)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(repository['name']?.toString() ?? 'Unnamed repository'),
+                        subtitle: Text(
+                          [
+                            repository['repository_url']?.toString() ?? '',
+                            '${repository['stars'] ?? 0} stars · ${repository['default_branch'] ?? 'unknown branch'}',
+                          ].where((value) => value.isNotEmpty).join('\\n'),
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Remove from my collection',
+                          onPressed: _busy
+                              ? null
+                              : () => _removeSubmission(
+                                    repository['id'].toString(),
+                                    repository['name']?.toString() ?? 'repository',
+                                  ),
+                          icon: const Icon(Icons.remove_circle_outline_rounded),
+                        ),
+                        isThreeLine: true,
+                      ),
                 ]),
                 _section('Discover apps', Icons.travel_explore_rounded, [
                   _textField(
