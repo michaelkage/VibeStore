@@ -1,27 +1,100 @@
 import re
+from urllib.parse import quote
+
 import httpx
+
 from app.config import get_settings
 
 _GITHUB_RE = re.compile(r"^https?://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
+_MAX_FILE_BYTES = 1_000_000
+_MAX_INDEXED_FILES = 12
+
+
+def parse_github_url(repository_url: str) -> tuple[str, str]:
+    match = _GITHUB_RE.fullmatch(repository_url.strip())
+    if match is None:
+        raise ValueError("Only canonical public GitHub repository URLs are supported")
+    owner, repository = match.groups()
+    if repository.lower().endswith(".git"):
+        repository = repository[:-4]
+    return owner, repository
+
+
+async def fetch_repository_snapshot(repository_url: str) -> dict:
+    owner, repository = parse_github_url(repository_url)
+    settings = get_settings()
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if settings.github_token:
+        headers["Authorization"] = f"Bearer {settings.github_token}"
+
+    async with httpx.AsyncClient(timeout=25, follow_redirects=False) as client:
+        base = f"https://api.github.com/repos/{owner}/{repository}"
+        metadata_response = await client.get(base, headers=headers)
+        metadata_response.raise_for_status()
+        metadata = metadata_response.json()
+        if metadata.get("private"):
+            raise ValueError("Private repositories are not supported by this indexing endpoint")
+
+        branch = metadata["default_branch"]
+        branch_response = await client.get(f"{base}/branches/{quote(branch, safe='')}", headers=headers)
+        branch_response.raise_for_status()
+        commit_sha = branch_response.json()["commit"]["sha"]
+
+        tree_response = await client.get(
+            f"{base}/git/trees/{quote(branch, safe='')}?recursive=1",
+            headers=headers,
+        )
+        tree_response.raise_for_status()
+        tree_payload = tree_response.json()
+        if tree_payload.get("truncated"):
+            raise ValueError("Repository tree is too large for complete indexing")
+
+        candidates = [
+            entry for entry in tree_payload.get("tree", [])
+            if entry.get("type") == "blob"
+            and (
+                entry["path"].lower() in {"readme.md", "readme"}
+                or entry["path"].endswith("AndroidManifest.xml")
+            )
+        ]
+        candidates.sort(key=lambda entry: (0 if entry["path"].lower() in {"readme.md", "readme"} else 1, entry["path"]))
+        files = []
+        for entry in candidates[:_MAX_INDEXED_FILES]:
+            if entry.get("size", 0) > _MAX_FILE_BYTES:
+                continue
+            raw_url = (
+                f"https://raw.githubusercontent.com/{owner}/{repository}/"
+                f"{quote(branch, safe='')}/{quote(entry['path'], safe='/')}"
+            )
+            raw_response = await client.get(raw_url, headers={"Accept": "text/plain"})
+            if raw_response.status_code == 404:
+                continue
+            raw_response.raise_for_status()
+            if len(raw_response.content) > _MAX_FILE_BYTES:
+                continue
+            files.append({
+                "path": entry["path"],
+                "content_sha": entry["sha"],
+                "content": raw_response.text,
+                "size": len(raw_response.content),
+            })
+
+    license_info = metadata.get("license") or {}
+    return {
+        "name": metadata["name"],
+        "description": metadata.get("description"),
+        "repository_url": metadata["html_url"],
+        "default_branch": branch,
+        "stars": int(metadata.get("stargazers_count") or 0),
+        "license": license_info.get("spdx_id"),
+        "commit_sha": commit_sha,
+        "files": files,
+    }
+
+
 async def fetch_repository_files(repository_url: str) -> dict[str, str]:
-    match = _GITHUB_RE.match(repository_url)
-    if not match:
-        raise ValueError("Only public GitHub repository URLs are currently supported")
-    owner, repo = match.groups()
-    headers = {"Accept": "application/vnd.github+json"}
-    if token := get_settings().github_token:
-        headers["Authorization"] = f"Bearer {token}"
-    async with httpx.AsyncClient(timeout=20, follow_redirects=True) as client:
-        metadata = await client.get(f"https://api.github.com/repos/{owner}/{repo}", headers=headers)
-        metadata.raise_for_status()
-        branch = metadata.json()["default_branch"]
-        tree = await client.get(f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1", headers=headers)
-        tree.raise_for_status()
-        candidates = [e["path"] for e in tree.json().get("tree", [])
-            if e.get("type") == "blob" and (e["path"].endswith("AndroidManifest.xml") or e["path"].lower() == "readme.md")]
-        result = {}
-        for path in candidates[:12]:
-            raw = await client.get(f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}", headers=headers)
-            if raw.is_success and len(raw.content) <= 1_000_000:
-                result[path] = raw.text
-        return result
+    snapshot = await fetch_repository_snapshot(repository_url)
+    return {item["path"]: item["content"] for item in snapshot["files"]}
