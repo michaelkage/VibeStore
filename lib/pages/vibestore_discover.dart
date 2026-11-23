@@ -169,9 +169,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         if (appId != null && appId.isNotEmpty) {
           try {
             final cached = await api.cachedInspection(appId);
-            _inspection = const JsonEncoder.withIndent(
-              '  ',
-            ).convert(cached['report'] ?? cached);
+            _inspection = const JsonEncoder.withIndent('  ').convert(
+              cached['report'] ?? cached,
+            );
           } catch (error) {
             inspectionNotice = 'Inspection report is not available yet: $error';
           }
