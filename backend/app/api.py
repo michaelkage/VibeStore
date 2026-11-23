@@ -29,6 +29,7 @@ from app.schemas import (
     TokenResponse,
     UserResponse,
 )
+from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
 from app.services.github import fetch_repository_files, fetch_repository_snapshot
 from app.services.manifest import inspect_manifest
 
@@ -316,14 +317,21 @@ async def inspect_repository(payload: RepositoryRequest):
         files = await fetch_repository_files(str(payload.repository_url))
     except (ValueError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=422, detail=f"Repository could not be inspected: {exc}") from exc
-    manifest = next((value for path, value in files.items() if path.endswith("AndroidManifest.xml")), None)
+    sdk_detections = detect_declared_sdks(files)
+    manifest_path, manifest = next(
+        ((path, value) for path, value in files.items() if path.endswith("AndroidManifest.xml")),
+        (None, None),
+    )
     if manifest is None:
         return InspectionResponse(
             repository=str(payload.repository_url),
             manifest_found=False,
             permissions=[],
+            sdk_detections=sdk_detections,
+            manifest_warnings=[],
             limitations=[
                 "AndroidManifest.xml was not found in common repository paths.",
+                "SDK matches are dependency declarations only; they do not prove SDK initialization or data transmission.",
                 "Only static source inspection is performed; no APK or runtime behavior was executed.",
             ],
         )
@@ -336,8 +344,12 @@ async def inspect_repository(payload: RepositoryRequest):
         manifest_found=True,
         package_name=parsed["package_name"],
         permissions=[ManifestFinding(**finding) for finding in parsed["permissions"]],
+        sdk_detections=sdk_detections,
+        manifest_warnings=inspect_manifest_flags(manifest, manifest_path),
         limitations=[
             "Permission declarations do not prove a permission is used at runtime.",
-            "Tracker detection and full architecture analysis are not yet enabled.",
+            "SDK matches are dependency declarations only; they do not prove SDK initialization or data transmission.",
+            "Manifest warnings use line-level static heuristics and require manual review.",
+            "Runtime behavior, dynamic code loading and full architecture analysis are not assessed.",
         ],
     )
