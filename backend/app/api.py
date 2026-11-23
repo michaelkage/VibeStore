@@ -360,6 +360,8 @@ async def github_webhook(
         payload = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise HTTPException(status_code=400, detail="Invalid GitHub webhook JSON") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="GitHub webhook payload must be a JSON object")
 
     if event != "push" or payload.get("deleted") is True:
         return {"accepted": True, "ignored": True, "reason": "event_not_indexable"}
