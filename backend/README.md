@@ -26,7 +26,7 @@ Health: http://localhost:8000/health
 
 ## API
 
-- `GET /health`: database-aware service health.
+- `GET /health`: database and Redis dependency health.
 - `POST /api/v1/auth/register`: create an account and issue a short-lived access token.
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
@@ -50,8 +50,9 @@ Use the returned `access_token` as `Authorization: Bearer <token>` for `/auth/me
 - Access tokens are signed HS256 JWTs with issuer, issue time and expiry claims.
 - `JWT_SECRET_KEY` must be a unique random value of at least 32 characters. Never commit it.
 - Account email addresses are normalized to lowercase and protected by a unique database index.
-- Login failures use a generic error response.
-- Access tokens are short-lived; refresh-token rotation, email verification, password reset, account recovery, MFA, and authentication rate limiting are not yet implemented. Do not expose this service to the public internet as a production identity provider until these controls are added.
+- Login failures use a generic error response; Argon2 hashing/verification runs off the async event loop and unknown-account attempts use a dummy hash.
+- Registration and login are rate-limited to 10 attempts per client IP per 15-minute Redis window. If Redis is unavailable, authentication attempts fail closed with HTTP 503.
+- Access tokens are short-lived; refresh-token rotation, email verification, password reset, account recovery, MFA, and email verification, password reset, account recovery and MFA are not yet implemented. Do not expose this service to the public internet as a production identity provider until these controls are added.
 
 ## AI provider adapter
 
