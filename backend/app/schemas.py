@@ -94,3 +94,16 @@ class IndexRepositoryResponse(BaseModel):
     latest_commit_sha: str
     stars: int
     indexed_files: int
+
+
+
+class RepositorySubmissionResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    repository_url: str
+    default_branch: str
+    latest_commit_sha: str | None = None
+    stars: int
+    submitted_at: datetime
+    indexed_at: datetime | None = None
