@@ -12,6 +12,11 @@ class FakeMappings:
     def all(self):
         return self.rows
 
+    def one(self):
+        if len(self.rows) != 1:
+            raise AssertionError(f"Expected one row, received {len(self.rows)}")
+        return self.rows[0]
+
     def __iter__(self):
         return iter(self.rows)
 
