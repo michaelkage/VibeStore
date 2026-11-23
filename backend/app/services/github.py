@@ -69,17 +69,27 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
                 f"https://raw.githubusercontent.com/{owner}/{repository}/"
                 f"{quote(branch, safe='')}/{quote(entry['path'], safe='/')}"
             )
-            raw_response = await client.get(raw_url, headers={"Accept": "text/plain"})
-            if raw_response.status_code == 404:
+            chunks = []
+            total_bytes = 0
+            oversized = False
+            async with client.stream("GET", raw_url, headers={"Accept": "text/plain"}) as raw_response:
+                if raw_response.status_code == 404:
+                    continue
+                raw_response.raise_for_status()
+                async for chunk in raw_response.aiter_bytes():
+                    total_bytes += len(chunk)
+                    if total_bytes > _MAX_FILE_BYTES:
+                        oversized = True
+                        break
+                    chunks.append(chunk)
+            if oversized:
                 continue
-            raw_response.raise_for_status()
-            if len(raw_response.content) > _MAX_FILE_BYTES:
-                continue
+            content_bytes = b"".join(chunks)
             files.append({
                 "path": entry["path"],
                 "content_sha": entry["sha"],
-                "content": raw_response.text,
-                "size": len(raw_response.content),
+                "content": content_bytes.decode("utf-8", errors="replace"),
+                "size": total_bytes,
             })
 
     license_info = metadata.get("license") or {}
