@@ -107,8 +107,6 @@ class VibeStoreApi {
         .toList(growable: false);
   }
 
-  Future<Map<String, dynamic>> currentUser() async => _post('auth/me', {});
-
   Future<Map<String, dynamic>> indexRepository(String repositoryUrl) =>
       _post('repositories/index', {'repository_url': repositoryUrl.trim()});
 
