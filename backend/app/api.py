@@ -315,7 +315,6 @@ async def remove_my_repository(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Repository submission not found")
     await session.commit()
-    return None
 
 
 @router.post("/search", response_model=list[SearchResult], tags=["discovery"])
