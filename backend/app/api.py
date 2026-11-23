@@ -8,7 +8,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.openai_compatible import get_ai_provider
-from app.auth import create_access_token, get_current_user, hash_password, verify_password
+from app.auth import (
+    _DUMMY_PASSWORD_HASH,
+    create_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+)
 from app.config import get_settings
 from app.db import get_session
 from app.schemas import (
@@ -80,7 +86,7 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
         {"email": payload.email.strip().lower()},
     )
     user = result.mappings().first()
-    candidate_hash = user["password_hash"] if user is not None else __import__("app.auth", fromlist=["_DUMMY_PASSWORD_HASH"])._DUMMY_PASSWORD_HASH
+    candidate_hash = user["password_hash"] if user is not None else _DUMMY_PASSWORD_HASH
     password_valid = await asyncio.to_thread(verify_password, payload.password, candidate_hash)
     if user is None or not password_valid:
         raise HTTPException(status_code=401, detail="Invalid email or password",
