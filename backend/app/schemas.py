@@ -61,3 +61,13 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"
     expires_in: int
     user: UserResponse
+
+
+class IndexRepositoryResponse(BaseModel):
+    id: str
+    name: str
+    repository_url: str
+    default_branch: str
+    latest_commit_sha: str
+    stars: int
+    indexed_files: int
