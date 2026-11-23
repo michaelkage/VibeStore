@@ -54,9 +54,18 @@ async def reconcile_catalog(ctx=None) -> dict[str, int]:
             text("""
                 SELECT id::text AS id, repository_url
                 FROM apps
-                WHERE indexed_at IS NULL
-                   OR indexed_at < now() - make_interval(days => :stale_days)
-                ORDER BY indexed_at ASC NULLS FIRST, id ASC
+                WHERE (apps.indexed_at IS NULL
+                       OR apps.indexed_at < now() - make_interval(days => :stale_days))
+                  AND NOT EXISTS (
+                      SELECT 1 FROM repository_index_jobs AS jobs
+                      WHERE jobs.repository_url = apps.repository_url
+                        AND (
+                            jobs.status IN ('queued', 'running', 'retrying')
+                            OR (jobs.source = 'scheduled' AND jobs.status = 'failed'
+                                AND jobs.updated_at > now() - interval '24 hours')
+                        )
+                  )
+                ORDER BY apps.indexed_at ASC NULLS FIRST, apps.id ASC
                 LIMIT :limit
             """),
             {
