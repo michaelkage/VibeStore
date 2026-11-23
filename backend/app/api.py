@@ -31,16 +31,16 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
     if len(settings.jwt_secret_key) < 32:
         raise HTTPException(status_code=503, detail="Authentication is not configured")
     email = payload.email.strip().lower()
-    result = await session.execute(
-        text("""
-            INSERT INTO users (email, password_hash)
-            VALUES (:email, :password_hash)
-            RETURNING id::text AS id, email, created_at
-        """),
-        {"email": email, "password_hash": hash_password(payload.password)},
-    )
-    user = result.mappings().one()
     try:
+        result = await session.execute(
+            text("""
+                INSERT INTO users (email, password_hash)
+                VALUES (:email, :password_hash)
+                RETURNING id::text AS id, email, created_at
+            """),
+            {"email": email, "password_hash": hash_password(payload.password)},
+        )
+        user = result.mappings().one()
         await session.commit()
     except IntegrityError:
         await session.rollback()
