@@ -384,6 +384,31 @@ async def github_webhook(
         {"delivery": delivery, "event": event, "repository_url": repository_url},
     )
     if duplicate.scalar_one_or_none() is None:
+        existing = await session.execute(
+            text("""
+                SELECT jobs.id::text AS id, jobs.status, jobs.error
+                FROM github_webhook_deliveries AS deliveries
+                JOIN repository_index_jobs AS jobs ON jobs.id = deliveries.job_id
+                WHERE deliveries.delivery_id = :delivery
+            """),
+            {"delivery": delivery},
+        )
+        prior_job = existing.mappings().first()
+        if prior_job and prior_job["status"] == "failed" and prior_job["error"] == "Queue unavailable":
+            await session.execute(
+                text("""
+                    UPDATE repository_index_jobs
+                    SET status = 'queued', error = NULL, updated_at = now()
+                    WHERE id = CAST(:id AS uuid)
+                """),
+                {"id": prior_job["id"]},
+            )
+            await session.commit()
+            try:
+                await enqueue_repository_index(prior_job["id"], repository_url, None)
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail="Repository indexing queue is unavailable") from exc
+            return {"accepted": True, "duplicate": True, "job_id": prior_job["id"], "requeued": True}
         return {"accepted": True, "duplicate": True}
 
     job_id = str(uuid4())
