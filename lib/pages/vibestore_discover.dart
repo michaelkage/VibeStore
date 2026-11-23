@@ -130,7 +130,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     final queued = await api.enqueueRepositoryIndex(_repositoryController.text);
     final jobId = queued['id'] as String;
     if (mounted) {
-      setState(() => _notice = 'Repository queued for background indexing ($jobId).');
+      setState(
+        () => _notice = 'Repository queued for background indexing ($jobId).',
+      );
     }
     for (var attempt = 0; attempt < 200; attempt++) {
       await Future.delayed(const Duration(seconds: 2));
@@ -142,7 +144,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         if (!mounted) return;
         setState(() {
           _submissions = repositories;
-          _notice = 'Repository indexing completed. Your collection is up to date.';
+          _notice =
+              'Repository indexing completed. Your collection is up to date.';
         });
         return;
       }
@@ -152,7 +155,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         );
       }
       setState(() {
-        _notice = 'Indexing repository… $jobStatus (attempt ${job['attempt_count'] ?? 0}).';
+        _notice =
+            'Indexing repository… $jobStatus (attempt ${job['attempt_count'] ?? 0}).';
       });
     }
     throw VibeStoreApiException(
