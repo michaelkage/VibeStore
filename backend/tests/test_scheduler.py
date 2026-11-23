@@ -83,7 +83,13 @@ async def test_reconcile_recovers_jobs_and_schedules_stale_catalog(monkeypatch):
 async def test_reconcile_leaves_queued_jobs_for_next_tick_when_redis_is_down(monkeypatch):
     session = FakeSession()
     session.execute = AsyncMock(side_effect=[
-        FakeResult(), FakeResult(), FakeResult(),
+        FakeResult(),
+        FakeResult(rows=[{
+            "id": "queued-1",
+            "repository_url": "https://github.com/a/b",
+            "requested_by": None,
+        }]),
+        FakeResult(),
     ])
     monkeypatch.setattr("app.scheduler.SessionLocal", lambda: session)
     monkeypatch.setattr(
@@ -101,4 +107,5 @@ async def test_reconcile_leaves_queued_jobs_for_next_tick_when_redis_is_down(mon
     result = await reconcile_catalog()
 
     assert result == {"scheduled": 0, "recovered": 0, "enqueued": 0, "candidates": 0}
+    enqueue.assert_awaited_once()
     session.commit.assert_awaited_once()
