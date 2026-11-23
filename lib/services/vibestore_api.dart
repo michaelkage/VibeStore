@@ -80,7 +80,7 @@ class VibeStoreApi {
       'email': email.trim(),
       'password': password,
     });
-    await _saveToken(response);
+    _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
   }
 
@@ -110,11 +110,11 @@ class VibeStoreApi {
   Future<Map<String, dynamic>> inspectRepository(String repositoryUrl) =>
       _post('repositories/inspect', {'repository_url': repositoryUrl.trim()});
 
-  Future<void> logout() async {
+  void logout() {
     _accessToken = null;
   }
 
-  Future<void> _saveToken(Map<String, dynamic> response) async {
+  void _saveToken(Map<String, dynamic> response) {
     final token = response['access_token'];
     if (token is! String || token.isEmpty) {
       throw const VibeStoreApiException('The API returned an invalid access token.');
