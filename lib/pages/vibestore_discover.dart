@@ -219,6 +219,19 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     });
   });
 
+  Future<void> _loadCachedInspection(String appId, String appName) =>
+      _run(() async {
+        await _api!.configureBaseUrl(_baseUrlController.text);
+        final cached = await _api!.cachedInspection(appId);
+        if (!mounted) return;
+        setState(() {
+          _inspection = const JsonEncoder.withIndent('  ').convert(
+            cached['report'] ?? cached,
+          );
+          _notice = 'Loaded cached X-Ray report for $appName.';
+        });
+      });
+
   Future<void> _logout() async {
     _api?.logout();
     if (mounted) setState(() => _notice = 'Signed out.');
@@ -436,6 +449,12 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                     for (final result in _results)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
+                        onTap: _busy
+                            ? null
+                            : () => _loadCachedInspection(
+                                result['id'].toString(),
+                                result['name']?.toString() ?? 'app',
+                              ),
                         title: Text(
                           result['name']?.toString() ?? 'Unnamed app',
                         ),
