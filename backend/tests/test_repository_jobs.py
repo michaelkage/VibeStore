@@ -170,3 +170,39 @@ async def test_github_webhook_delivery_is_idempotent(job_client, monkeypatch):
     assert response.status_code == 202
     assert response.json()["duplicate"] is True
     enqueue.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_webhook_requeues_job_after_queue_outage(job_client, monkeypatch):
+    client, session = job_client
+    monkeypatch.setattr(
+        "app.api.get_settings",
+        lambda: SimpleNamespace(github_webhook_secret="webhook-secret"),
+    )
+    session.execute.side_effect = [
+        FakeResult(scalar=None),
+        FakeResult(row={"id": JOB_ID, "status": "failed", "error": "Queue unavailable"}),
+        FakeResult(),
+    ]
+    enqueue = AsyncMock()
+    monkeypatch.setattr("app.api.enqueue_repository_index", enqueue)
+    body = json.dumps({
+        "deleted": False,
+        "ref": "refs/heads/main",
+        "repository": {"html_url": "https://github.com/example/app", "default_branch": "main"},
+    }).encode()
+    signature = "sha256=" + hmac.new(b"webhook-secret", body, hashlib.sha256).hexdigest()
+
+    response = await client.post(
+        "/api/v1/webhooks/github",
+        content=body,
+        headers={
+            "X-Hub-Signature-256": signature,
+            "X-GitHub-Event": "push",
+            "X-GitHub-Delivery": "delivery-redis-outage",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["requeued"] is True
+    enqueue.assert_awaited_once_with(JOB_ID, "https://github.com/example/app", None)
