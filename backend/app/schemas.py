@@ -107,3 +107,15 @@ class RepositorySubmissionResponse(BaseModel):
     stars: int
     submitted_at: datetime
     indexed_at: datetime | None = None
+
+
+class RepositoryIndexJobResponse(BaseModel):
+    id: str
+    status: str
+    repository_url: str
+    attempt_count: int
+    error: str | None = None
+    app_id: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
