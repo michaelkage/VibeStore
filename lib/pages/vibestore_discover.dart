@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/services/vibestore_api.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class VibeStoreDiscoverPage extends StatefulWidget {
   const VibeStoreDiscoverPage({super.key});
@@ -11,6 +12,24 @@ class VibeStoreDiscoverPage extends StatefulWidget {
 }
 
 class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
+  static final Uri _websiteUri =
+      Uri.parse('https://michaelkage.github.io/VibeStore/');
+
+  Future<void> _openWebsite() async {
+    try {
+      final opened = await launchUrl(
+        _websiteUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        setState(() => _error = 'Unable to open the VibeStore website.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Unable to open the VibeStore website: $error');
+      }
+    }
+  }
   final _baseUrlController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -242,7 +261,16 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   Widget build(BuildContext context) {
     if (_initializing) {
       return Scaffold(
-        appBar: AppBar(title: const Text('VibeStore discovery')),
+        appBar: AppBar(
+          title: const Text('VibeStore discovery'),
+          actions: [
+            IconButton(
+              onPressed: _openWebsite,
+              tooltip: 'VibeStore website',
+              icon: const Icon(Icons.public_rounded),
+            ),
+          ],
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -252,6 +280,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       appBar: AppBar(
         title: const Text('VibeStore discovery'),
         actions: [
+          IconButton(
+            onPressed: _openWebsite,
+            tooltip: 'VibeStore website',
+            icon: const Icon(Icons.public_rounded),
+          ),
           if (api?.isAuthenticated == true)
             IconButton(
               onPressed: _busy ? null : _logout,
