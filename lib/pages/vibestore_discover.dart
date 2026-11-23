@@ -125,15 +125,39 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   });
 
   Future<void> _indexRepository() => _run(() async {
-    await _api!.configureBaseUrl(_baseUrlController.text);
-    final result = await _api!.indexRepository(_repositoryController.text);
-    final repositories = await _api!.myRepositories();
-    if (!mounted) return;
-    setState(() {
-      _submissions = repositories;
-      _notice =
-          'Indexed ${result['name']} (${result['indexed_files']} source files).';
-    });
+    final api = _api!;
+    await api.configureBaseUrl(_baseUrlController.text);
+    final queued = await api.enqueueRepositoryIndex(_repositoryController.text);
+    final jobId = queued['id'] as String;
+    if (mounted) {
+      setState(() => _notice = 'Repository queued for background indexing ($jobId).');
+    }
+    for (var attempt = 0; attempt < 200; attempt++) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      final job = await api.repositoryIndexJob(jobId);
+      final jobStatus = job['status']?.toString() ?? 'unknown';
+      if (jobStatus == 'completed') {
+        final repositories = await api.myRepositories();
+        if (!mounted) return;
+        setState(() {
+          _submissions = repositories;
+          _notice = 'Repository indexing completed. Your collection is up to date.';
+        });
+        return;
+      }
+      if (jobStatus == 'failed') {
+        throw VibeStoreApiException(
+          job['error']?.toString() ?? 'Repository indexing failed.',
+        );
+      }
+      setState(() {
+        _notice = 'Indexing repository… $jobStatus (attempt ${job['attempt_count'] ?? 0}).';
+      });
+    }
+    throw VibeStoreApiException(
+      'Indexing is still running. Job ID: $jobId. Refresh the collection later.',
+    );
   });
 
   Future<void> _removeSubmission(String appId, String name) => _run(() async {
