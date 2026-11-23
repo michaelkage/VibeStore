@@ -115,6 +115,16 @@ async def index_repository(
         None,
     )
     description = snapshot["description"] or (readme[:500] if readme else None)
+    manifest_xml = next(
+        (item["content"] for item in snapshot["files"] if item["path"].endswith("AndroidManifest.xml")),
+        None,
+    )
+    package_name = None
+    if manifest_xml is not None:
+        try:
+            package_name = inspect_manifest(manifest_xml)["package_name"]
+        except ValueError:
+            package_name = None
     embedding_literal = None
     embedding_model = None
     settings = get_settings()
@@ -136,14 +146,15 @@ async def index_repository(
     result = await session.execute(
         text("""
             INSERT INTO apps (
-                name, description, repository_url, default_branch, stars,
+                package_name, name, description, repository_url, default_branch, stars,
                 license, latest_commit_sha, indexed_at, embedding, embedding_model
             )
             VALUES (
-                :name, :description, :repository_url, :default_branch, :stars,
+                :package_name, :name, :description, :repository_url, :default_branch, :stars,
                 :license, :commit_sha, now(), CAST(:embedding AS vector), :embedding_model
             )
             ON CONFLICT (repository_url) DO UPDATE SET
+                package_name = COALESCE(EXCLUDED.package_name, apps.package_name),
                 name = EXCLUDED.name,
                 description = COALESCE(EXCLUDED.description, apps.description),
                 default_branch = EXCLUDED.default_branch,
@@ -157,6 +168,7 @@ async def index_repository(
             RETURNING id::text AS id
         """),
         {
+            "package_name": package_name,
             "name": snapshot["name"],
             "description": description,
             "repository_url": snapshot["repository_url"],
