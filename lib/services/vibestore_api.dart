@@ -16,12 +16,10 @@ class VibeStoreApiException implements Exception {
 
 class VibeStoreApi {
   VibeStoreApi._({
-    required SharedPreferences preferences,
-    required http.Client client,
-    required String baseUrl,
-  }) : _preferences = preferences,
-       _client = client,
-       _baseUrl = baseUrl;
+    required this._preferences,
+    required this._client,
+    required this._baseUrl,
+  });
 
   static const _baseUrlKey = 'vibestore.api.baseUrl';
   static const _timeout = Duration(seconds: 30);
