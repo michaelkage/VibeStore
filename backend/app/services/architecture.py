@@ -60,7 +60,7 @@ def inspect_manifest_flags(manifest: str, file_path: str = "AndroidManifest.xml"
                 "category": "component_exposure",
                 "severity": "review",
                 "title": "Exported component declaration needs review",
-                "file_path": "AndroidManifest.xml",
+                "file_path": file_path,
                 "line_number": line_number,
                 "evidence": line.strip()[:300],
                 "explanation": "An exported component can be reached by other apps. Review its intent filters and access controls; this line-only check cannot determine effective component protection.",
