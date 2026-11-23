@@ -131,7 +131,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   });
 
   Future<void> _logout() async {
-    await _api?.logout();
+    _api?.logout();
     if (mounted) setState(() => _notice = 'Signed out.');
   }
 
