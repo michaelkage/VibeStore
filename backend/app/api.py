@@ -8,7 +8,6 @@ from app.auth import create_access_token, get_current_user, hash_password, verif
 from app.config import get_settings
 from app.db import get_session
 from app.schemas import (
-    HealthResponse,
     InspectionResponse,
     LoginRequest,
     ManifestFinding,
