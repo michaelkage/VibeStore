@@ -12,24 +12,10 @@ class VibeStoreDiscoverPage extends StatefulWidget {
 }
 
 class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
-  static final Uri _websiteUri =
-      Uri.parse('https://michaelkage.github.io/VibeStore/');
+  static final Uri _websiteUri = Uri.parse(
+    'https://michaelkage.github.io/VibeStore/',
+  );
 
-  Future<void> _openWebsite() async {
-    try {
-      final opened = await launchUrl(
-        _websiteUri,
-        mode: LaunchMode.externalApplication,
-      );
-      if (!opened && mounted) {
-        setState(() => _error = 'Unable to open the VibeStore website.');
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() => _error = 'Unable to open the VibeStore website: $error');
-      }
-    }
-  }
   final _baseUrlController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -44,6 +30,24 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   String? _error;
   bool _initializing = true;
   bool _busy = false;
+
+  Future<void> _openWebsite() async {
+    try {
+      final opened = await launchUrl(
+        _websiteUri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened && mounted) {
+        setState(() => _error = 'Unable to open the VibeStore website.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = 'Unable to open the VibeStore website: $error',
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
