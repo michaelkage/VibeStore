@@ -83,7 +83,7 @@ async def test_github_webhook_verifies_signature_and_enqueues_default_branch(job
     client, session = job_client
     monkeypatch.setattr(
         "app.api.get_settings",
-        lambda: SimpleNamespace(github_webhook_secret="webhook-secret"),
+        lambda: SimpleNamespace(github_webhook_secret="webhook-secret", github_token=None),
     )
     session.execute.side_effect = [
         FakeResult(scalar="delivery-123"),
