@@ -52,15 +52,36 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
         if tree_payload.get("truncated"):
             raise ValueError("Repository tree is too large for complete indexing")
 
+        def is_indexable_file(path: str) -> bool:
+            normalized = path.lower()
+            filename = normalized.rsplit("/", 1)[-1]
+            return (
+                normalized in {"readme.md", "readme"}
+                or filename == "androidmanifest.xml"
+                or filename in {
+                    "build.gradle",
+                    "build.gradle.kts",
+                    "settings.gradle",
+                    "settings.gradle.kts",
+                    "libs.versions.toml",
+                }
+            )
+
         candidates = [
             entry for entry in tree_payload.get("tree", [])
-            if entry.get("type") == "blob"
-            and (
-                entry["path"].lower() in {"readme.md", "readme"}
-                or entry["path"].endswith("AndroidManifest.xml")
-            )
+            if entry.get("type") == "blob" and is_indexable_file(entry["path"])
         ]
-        candidates.sort(key=lambda entry: (0 if entry["path"].lower() in {"readme.md", "readme"} else 1, entry["path"]))
+        def priority(entry: dict) -> tuple[int, str]:
+            filename = entry["path"].lower().rsplit("/", 1)[-1]
+            if filename in {"readme.md", "readme"}:
+                rank = 0
+            elif filename == "androidmanifest.xml":
+                rank = 1
+            else:
+                rank = 2
+            return rank, entry["path"]
+
+        candidates.sort(key=priority)
         files = []
         for entry in candidates[:_MAX_INDEXED_FILES]:
             if entry.get("size", 0) > _MAX_FILE_BYTES:
