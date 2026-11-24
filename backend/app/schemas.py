@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -121,7 +122,7 @@ class RepositoryIndexJobResponse(BaseModel):
     completed_at: datetime | None = None
 
 class RemixSessionCreateRequest(BaseModel):
-    app_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    app_id: UUID
     title: str = Field(default="New remix", min_length=1, max_length=120)
 
 
