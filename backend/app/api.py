@@ -44,7 +44,7 @@ from app.schemas import (
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
 from app.services.github import fetch_repository_files, fetch_repository_snapshot, parse_github_url
 from app.services.manifest import inspect_manifest
-from app.services.remix import generate_change_plan
+from app.services.remix import generate_change_plan\nfrom app.services.remix_proposals import generate_patch_proposal
 
 router = APIRouter()
 
@@ -831,3 +831,97 @@ async def add_remix_message(
     )
     await session.commit()
     return RemixMessageResponse(**dict(response.mappings().one()))
+
+
+@router.post("/remixes/{remix_id}/proposals", response_model=RemixPatchProposalResponse, status_code=status.HTTP_201_CREATED, tags=["remix"])
+async def create_remix_patch_proposal(
+    remix_id: UUID, payload: RemixPatchProposalCreateRequest,
+    user=Depends(get_current_user), session: AsyncSession = Depends(get_session),
+):
+    owned = await session.execute(text("""
+        SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha, apps.latest_commit_sha
+        FROM remix_sessions rs JOIN apps ON apps.id = rs.app_id
+        WHERE rs.id = CAST(:id AS uuid) AND rs.owner_id = CAST(:owner_id AS uuid) AND rs.status = 'planning'
+    """), {"id": str(remix_id), "owner_id": user["id"]})
+    remix = owned.mappings().first()
+    if remix is None:
+        raise HTTPException(status_code=404, detail="Active remix session not found")
+    if remix["latest_commit_sha"] != remix["source_commit_sha"]:
+        raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session")
+    await enforce_remix_rate_limit(user["id"])
+    rows = (await session.execute(text("""
+        SELECT path, content_sha, content_excerpt FROM repository_files
+        WHERE app_id = CAST(:app_id AS uuid)
+        ORDER BY CASE WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
+                      WHEN lower(path) LIKE '%build.gradle%' THEN 1 ELSE 2 END, path
+        LIMIT 12
+    """), {"app_id": remix["app_id"]})).mappings()
+    files = [dict(row) for row in rows]
+    if not files:
+        raise HTTPException(status_code=409, detail="No indexed source files are available for a proposal")
+    current = await session.execute(text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),
+                                    {"app_id": remix["app_id"]})
+    if current.scalar_one_or_none() != remix["source_commit_sha"]:
+        raise HTTPException(status_code=409, detail="Repository changed while preparing this proposal")
+    try:
+        proposal = await generate_patch_proposal(request=payload.content, files=files)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Remix planning AI provider is not configured") from exc
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=f"Planner returned an invalid review draft: {exc}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Patch proposal generation is temporarily unavailable") from exc
+    latest = await session.execute(text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),
+                                   {"app_id": remix["app_id"]})
+    if latest.scalar_one_or_none() != remix["source_commit_sha"]:
+        raise HTTPException(status_code=409, detail="Repository changed before the proposal could be saved")
+    selected_paths = {entry["path"] for entry in proposal["files"]}
+    source_files = [{"path": f["path"], "content_sha": f["content_sha"]} for f in files if f["path"] in selected_paths]
+    inserted = await session.execute(text("""
+        INSERT INTO remix_patch_proposals (session_id, base_commit_sha, summary, proposal, source_files)
+        VALUES (CAST(:session_id AS uuid), :commit_sha, :summary, CAST(:proposal AS jsonb), CAST(:source_files AS jsonb))
+        RETURNING id::text AS id, session_id::text AS session_id, base_commit_sha, status, summary,
+                  proposal, source_files, validation_status, reviewed_at, created_at, updated_at
+    """), {"session_id": str(remix_id), "commit_sha": remix["source_commit_sha"],
+           "summary": proposal["summary"], "proposal": json.dumps(proposal), "source_files": json.dumps(source_files)})
+    await session.commit()
+    return RemixPatchProposalResponse(**dict(inserted.mappings().one()))
+
+
+@router.get("/remixes/{remix_id}/proposals", response_model=list[RemixPatchProposalResponse], tags=["remix"])
+async def list_remix_patch_proposals(
+    remix_id: UUID, user=Depends(get_current_user), session: AsyncSession = Depends(get_session),
+):
+    owned = await session.execute(text("SELECT id FROM remix_sessions WHERE id = CAST(:id AS uuid) AND owner_id = CAST(:owner_id AS uuid)"),
+                                  {"id": str(remix_id), "owner_id": user["id"]})
+    if owned.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Remix session not found")
+    rows = (await session.execute(text("""
+        SELECT id::text AS id, session_id::text AS session_id, base_commit_sha, status, summary,
+               proposal, source_files, validation_status, reviewed_at, created_at, updated_at
+        FROM remix_patch_proposals WHERE session_id = CAST(:id AS uuid)
+        ORDER BY created_at DESC LIMIT 50
+    """), {"id": str(remix_id)})).mappings()
+    return [RemixPatchProposalResponse(**dict(row)) for row in rows]
+
+
+@router.post("/remixes/{remix_id}/proposals/{proposal_id}/review", response_model=RemixPatchProposalResponse, tags=["remix"])
+async def review_remix_patch_proposal(
+    remix_id: UUID, proposal_id: UUID, payload: RemixPatchProposalReviewRequest,
+    user=Depends(get_current_user), session: AsyncSession = Depends(get_session),
+):
+    owned = await session.execute(text("SELECT id FROM remix_sessions WHERE id = CAST(:id AS uuid) AND owner_id = CAST(:owner_id AS uuid)"),
+                                  {"id": str(remix_id), "owner_id": user["id"]})
+    if owned.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Remix session not found")
+    result = await session.execute(text("""
+        UPDATE remix_patch_proposals SET status = :decision, reviewed_at = now(), updated_at = now()
+        WHERE id = CAST(:proposal_id AS uuid) AND session_id = CAST(:session_id AS uuid) AND status = 'proposed'
+        RETURNING id::text AS id, session_id::text AS session_id, base_commit_sha, status, summary,
+                  proposal, source_files, validation_status, reviewed_at, created_at, updated_at
+    """), {"decision": payload.decision, "proposal_id": str(proposal_id), "session_id": str(remix_id)})
+    row = result.mappings().first()
+    if row is None:
+        raise HTTPException(status_code=409, detail="Proposal is missing or has already been reviewed")
+    await session.commit()
+    return RemixPatchProposalResponse(**dict(row))
