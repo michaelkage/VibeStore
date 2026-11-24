@@ -297,6 +297,50 @@ class VibeStoreApi {
     'decision': decision,
   });
 
+  Future<Map<String, dynamic>> processApprovedPatch(
+    String remixId,
+    String proposalId,
+  ) => _post(
+    'remixes/$remixId/proposals/$proposalId/process',
+    const {},
+    timeout: const Duration(seconds: 60),
+  );
+
+  Future<http.Response> patchArtifact(
+    String remixId,
+    String proposalId,
+  ) async {
+    if (_baseUrl.isEmpty) {
+      throw const VibeStoreApiException(
+        'Configure the VibeStore API address first.',
+      );
+    }
+    final response = await _client
+        .get(
+          Uri.parse(
+            '$_baseUrl/api/v1/remixes/$remixId/proposals/$proposalId/artifact',
+          ),
+          headers: _authorizedHeaders(),
+        )
+        .timeout(_timeout);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException {
+        decoded = null;
+      }
+      final detail = decoded is Map ? decoded['detail'] : null;
+      throw VibeStoreApiException(
+        detail is String
+            ? detail
+            : 'Patch artifact request failed (${response.statusCode}).',
+        statusCode: response.statusCode,
+      );
+    }
+    return response;
+  }
+
   Future<dynamic> _get(String path) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
