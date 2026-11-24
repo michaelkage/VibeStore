@@ -1,10 +1,12 @@
 import json
+import logging
 from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from redis.exceptions import RedisError
 
 from app.auth import get_current_user
 from app.db import get_session
@@ -117,9 +119,8 @@ async def process_approved_patch(
     job = dict(saved.mappings().one())
     try:
         await enqueue_patch_job(job["id"])
-    except Exception:
-        # The durable queued row is recovered by the isolated worker's reconciler.
-        pass
+    except RedisError:
+        logging.getLogger(__name__).exception("Patch job enqueue failed; worker reconciliation will recover it")
     return job
 
 
