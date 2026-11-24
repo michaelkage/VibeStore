@@ -3,7 +3,7 @@ on:
   pull_request:
     paths: ["backend/**", ".github/workflows/backend-ci.yml"]
   push:
-    branches: [main]
+    branches: [main, feat/vibestore-ai-platform]
     paths: ["backend/**", ".github/workflows/backend-ci.yml"]
 jobs:
   test:
