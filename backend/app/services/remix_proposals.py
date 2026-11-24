@@ -20,7 +20,7 @@ def validate_proposal(raw: str, files: list[dict]) -> dict:
     except (json.JSONDecodeError, TypeError) as exc:
         raise ValueError("Planner did not return valid proposal JSON") from exc
     if not isinstance(proposal, dict):
-        raise ValueError("Proposal must be a JSON object")
+        raise TypeError("Proposal must be a JSON object")
     summary, items = proposal.get("summary"), proposal.get("files")
     risks, steps = proposal.get("risks", []), proposal.get("validation_steps", [])
     if not isinstance(summary, str) or not summary.strip() or len(summary) > MAX_SUMMARY_CHARS:
@@ -35,7 +35,7 @@ def validate_proposal(raw: str, files: list[dict]) -> dict:
     clean_items, seen = [], set()
     for item in items:
         if not isinstance(item, dict):
-            raise ValueError("Each file change must be an object")
+            raise TypeError("Each file change must be an object")
         path, rationale, diff = item.get("path"), item.get("rationale"), item.get("diff")
         if not isinstance(path, str) or not _PATH_RE.fullmatch(path):
             raise ValueError("Proposal contains an invalid file path")
