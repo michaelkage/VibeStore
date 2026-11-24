@@ -91,7 +91,7 @@ Repository files are fetched as data and never executed. The indexing endpoint a
 
 ## Remaining platform work
 
-Comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and richer catalog/discovery UX remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
+Comprehensive X-Ray analysis, full remix agent/orchestration, isolated patch-application workspaces, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and richer catalog/discovery UX remain outstanding. Remix planning, source diff generation and pinned-source applicability validation are implemented, but this API still does not modify repository files, build arbitrary repository code or sign APKs.
 
 Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, configure backups and observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
 
