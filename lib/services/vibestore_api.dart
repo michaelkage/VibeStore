@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class VibeStoreApiException implements Exception {
   const VibeStoreApiException(this.message, {this.statusCode});
@@ -17,14 +18,17 @@ class VibeStoreApiException implements Exception {
 class VibeStoreApi {
   VibeStoreApi._({
     required this._preferences,
+    required this._secureStorage,
     required this._client,
     required this._baseUrl,
   });
 
   static const _baseUrlKey = 'vibestore.api.baseUrl';
+  static const _accessTokenKey = 'vibestore.auth.accessToken';
   static const _timeout = Duration(seconds: 30);
 
   final SharedPreferences _preferences;
+  final FlutterSecureStorage _secureStorage;
   final http.Client _client;
   String _baseUrl;
   String? _accessToken;
@@ -34,11 +38,14 @@ class VibeStoreApi {
 
   static Future<VibeStoreApi> load() async {
     final preferences = await SharedPreferences.getInstance();
+    const secureStorage = FlutterSecureStorage();
+    final accessToken = await secureStorage.read(key: _accessTokenKey);
     return VibeStoreApi._(
       preferences: preferences,
+      secureStorage: secureStorage,
       client: http.Client(),
       baseUrl: preferences.getString(_baseUrlKey) ?? '',
-    );
+    ).._accessToken = accessToken;
   }
 
   Future<void> configureBaseUrl(String value) async {
@@ -69,6 +76,7 @@ class VibeStoreApi {
 
     if (normalized != _baseUrl) {
       _accessToken = null;
+      await _secureStorage.delete(key: _accessTokenKey);
     }
     _baseUrl = normalized;
     await _preferences.setString(_baseUrlKey, normalized);
@@ -79,7 +87,7 @@ class VibeStoreApi {
       'email': email.trim(),
       'password': password,
     });
-    _saveToken(response);
+    await _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
   }
 
@@ -307,11 +315,12 @@ class VibeStoreApi {
   Future<Map<String, dynamic>> inspectRepository(String repositoryUrl) =>
       _post('repositories/inspect', {'repository_url': repositoryUrl.trim()});
 
-  void logout() {
+  Future<void> logout() async {
     _accessToken = null;
+    await _secureStorage.delete(key: _accessTokenKey);
   }
 
-  void _saveToken(Map<String, dynamic> response) {
+  Future<void> _saveToken(Map<String, dynamic> response) async {
     final token = response['access_token'];
     if (token is! String || token.isEmpty) {
       throw const VibeStoreApiException(
@@ -319,6 +328,7 @@ class VibeStoreApi {
       );
     }
     _accessToken = token;
+    await _secureStorage.write(key: _accessTokenKey, value: token);
   }
 
   Future<Map<String, dynamic>> _post(
