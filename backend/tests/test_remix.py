@@ -6,9 +6,11 @@ from app.services import remix
 class FakeProvider:
     def __init__(self):
         self.prompt = None
+        self.system = None
 
     async def generate(self, *, system, prompt):
         self.prompt = prompt
+        self.system = system
         return "## Plan\n1. Update the evidenced UI."
 
     async def embed(self, texts):
@@ -33,7 +35,7 @@ async def test_change_plan_uses_bounded_context_and_never_requests_execution(mon
     assert "src/File11.kt" in provider.prompt
     assert "src/File12.kt" not in provider.prompt
     assert "older" in provider.prompt
-    assert "You produce plans only" in provider.prompt or "produce plans only" in provider.prompt
+    assert "produce plans only" in provider.system
     assert "Add a biometric lock" in provider.prompt
 
 
