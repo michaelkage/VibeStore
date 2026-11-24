@@ -160,8 +160,15 @@ async def fetch_repository_files_at_commit(
 
     async with httpx.AsyncClient(timeout=25, follow_redirects=False) as client:
         base = f"https://api.github.com/repos/{owner}/{repository}"
+        commit_response = await client.get(
+            f"{base}/git/commits/{commit_sha}", headers=headers,
+        )
+        commit_response.raise_for_status()
+        tree_sha = commit_response.json().get("tree", {}).get("sha")
+        if not isinstance(tree_sha, str) or not _GIT_SHA_RE.fullmatch(tree_sha):
+            raise ValueError("Pinned commit does not contain a valid Git tree")
         tree_response = await client.get(
-            f"{base}/git/trees/{commit_sha}?recursive=1", headers=headers,
+            f"{base}/git/trees/{tree_sha}?recursive=1", headers=headers,
         )
         tree_response.raise_for_status()
         tree = tree_response.json()
