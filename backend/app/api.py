@@ -672,7 +672,7 @@ async def create_remix_session(
             RETURNING id::text AS id, status, title, created_at, updated_at
         """),
         {
-            "owner_id": user["id"], "app_id": payload.app_id,
+            "owner_id": user["id"], "app_id": str(payload.app_id),
             "commit_sha": app["latest_commit_sha"], "title": payload.title.strip(),
         },
     )
@@ -791,6 +791,13 @@ async def add_remix_message(
         """),
         {"app_id": remix["app_id"]},
     )).mappings()
+    # Recheck after reading the snapshot to close the catalog-refresh race window.
+    current = await session.execute(
+        text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),
+        {"app_id": remix["app_id"]},
+    )
+    if current.scalar_one_or_none() != remix["source_commit_sha"]:
+        raise HTTPException(status_code=409, detail="Repository changed while preparing this plan; start a new remix session")
     try:
         plan = await generate_change_plan(
             request=payload.content,
