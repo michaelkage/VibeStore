@@ -214,7 +214,10 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
 
   Future<void> _createRemix(String appId, String appName) => _run(() async {
     await _api!.configureBaseUrl(_baseUrlController.text);
-    final created = await _api!.createRemixSession(appId, title: 'Remix · $appName');
+    final created = await _api!.createRemixSession(
+      appId,
+      title: 'Remix · $appName',
+    );
     final session = await _api!.remixSession(created['id'].toString());
     final sessions = await _api!.remixSessions();
     if (!mounted) return;
@@ -222,7 +225,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _activeRemix = session;
       _remixSessions = sessions;
       _remixPromptController.clear();
-      _notice = 'Remix session created for $appName at commit ${session['source_commit_sha']}.';
+      _notice =
+          'Remix session created for $appName at commit ${session['source_commit_sha']}.';
     });
   });
 
@@ -240,7 +244,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     final active = _activeRemix;
     final prompt = _remixPromptController.text.trim();
     if (active == null || prompt.length < 3) {
-      throw const VibeStoreApiException('Enter a change request with at least 3 characters.');
+      throw const VibeStoreApiException(
+        'Enter a change request with at least 3 characters.',
+      );
     }
     await _api!.configureBaseUrl(_baseUrlController.text);
     await _api!.sendRemixMessage(active['id'].toString(), prompt);
@@ -249,7 +255,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     setState(() {
       _activeRemix = session;
       _remixPromptController.clear();
-      _notice = 'Change plan generated. Review the evidence and validation steps below.';
+      _notice =
+          'Change plan generated. Review the evidence and validation steps below.';
     });
   });
 
@@ -520,7 +527,6 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                           ].where((value) => value.isNotEmpty).join('\n'),
                         ),
                         trailing: Wrap(
-                          mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             if (api.isAuthenticated)
@@ -535,7 +541,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                 icon: const Icon(Icons.auto_awesome_rounded),
                               ),
                             Text(
-                              (result['score'] as num?)?.toStringAsFixed(2) ?? '',
+                              (result['score'] as num?)?.toStringAsFixed(2) ??
+                                  '',
                             ),
                           ],
                         ),
@@ -545,7 +552,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                 ]),
                 _section('Remix Studio', Icons.auto_awesome_rounded, [
                   if (!api.isAuthenticated)
-                    const Text('Sign in to create and continue your private remix sessions.')
+                    const Text(
+                      'Sign in to create and continue your private remix sessions.',
+                    )
                   else ...[
                     Row(
                       children: [
@@ -558,27 +567,39 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       ],
                     ),
                     if (_remixSessions.isEmpty)
-                      const Text('No remix sessions loaded. Start one from a catalog search result, or refresh this list.')
+                      const Text(
+                        'No remix sessions loaded. Start one from a catalog search result, or refresh this list.',
+                      )
                     else
                       for (final remix in _remixSessions)
                         ListTile(
                           contentPadding: EdgeInsets.zero,
                           selected: _activeRemix?['id'] == remix['id'],
                           leading: const Icon(Icons.edit_note_rounded),
-                          title: Text(remix['title']?.toString() ?? 'Untitled remix'),
-                          subtitle: Text('${remix['app_name'] ?? 'App'} · ${(remix['source_commit_sha']?.toString() ?? '').substring(0, (remix['source_commit_sha']?.toString() ?? '').length.clamp(0, 10))}'),
+                          title: Text(
+                            remix['title']?.toString() ?? 'Untitled remix',
+                          ),
+                          subtitle: Text(
+                            '${remix['app_name'] ?? 'App'} · ${(remix['source_commit_sha']?.toString() ?? '').substring(0, (remix['source_commit_sha']?.toString() ?? '').length.clamp(0, 10))}',
+                          ),
                           trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: _busy ? null : () => _openRemix(remix['id'].toString()),
+                          onTap: _busy
+                              ? null
+                              : () => _openRemix(remix['id'].toString()),
                         ),
                     if (_activeRemix case final active?) ...[
                       const Divider(height: 24),
-                      Text(active['title']?.toString() ?? 'Active remix', style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        active['title']?.toString() ?? 'Active remix',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                       Text(
                         '${active['app_name'] ?? 'App'} · pinned to ${active['source_commit_sha'] ?? 'unknown commit'}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 12),
-                      for (final message in (active['messages'] as List? ?? const []))
+                      for (final message
+                          in (active['messages'] as List? ?? const []))
                         Padding(
                           padding: const EdgeInsets.only(bottom: 14),
                           child: Column(
@@ -587,13 +608,19 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                               Row(
                                 children: [
                                   Icon(
-                                    message['role'] == 'assistant' ? Icons.auto_awesome : Icons.person_outline,
+                                    message['role'] == 'assistant'
+                                        ? Icons.auto_awesome
+                                        : Icons.person_outline,
                                     size: 18,
                                   ),
                                   const SizedBox(width: 8),
                                   Text(
-                                    message['role'] == 'assistant' ? 'VibeStore plan' : 'You',
-                                    style: Theme.of(context).textTheme.labelLarge,
+                                    message['role'] == 'assistant'
+                                        ? 'VibeStore plan'
+                                        : 'You',
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.labelLarge,
                                   ),
                                   const Spacer(),
                                   if (message['message_type'] == 'change_plan')
@@ -601,8 +628,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                 ],
                               ),
                               const SizedBox(height: 6),
-                              SelectableText(message['content']?.toString() ?? ''),
-                              if ((message['evidence'] as List? ?? const []).isNotEmpty) ...[
+                              SelectableText(
+                                message['content']?.toString() ?? '',
+                              ),
+                              if ((message['evidence'] as List? ?? const [])
+                                  .isNotEmpty) ...[
                                 const SizedBox(height: 6),
                                 Text(
                                   'Evidence: ${(message['evidence'] as List).map((item) => item is Map ? item['path'] : '').where((path) => path.toString().isNotEmpty).join(', ')}',
@@ -619,7 +649,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         maxLength: 4000,
                         decoration: const InputDecoration(
                           labelText: 'Describe the change you want',
-                          hintText: 'Add biometric unlock, redesign the settings screen…',
+                          hintText:
+                              'Add biometric unlock, redesign the settings screen…',
                           border: OutlineInputBorder(),
                         ),
                       ),
