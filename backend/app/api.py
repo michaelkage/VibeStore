@@ -919,11 +919,27 @@ async def review_remix_patch_proposal(
     if owned.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Remix session not found")
     result = await session.execute(text("""
-        UPDATE remix_patch_proposals SET status = :decision, reviewed_at = now(), updated_at = now()
-        WHERE id = CAST(:proposal_id AS uuid) AND session_id = CAST(:session_id AS uuid) AND status = 'proposed'
-        RETURNING id::text AS id, session_id::text AS session_id, base_commit_sha, status, summary,
-                  proposal, source_files, validation_status, reviewed_at, created_at, updated_at
-    """), {"decision": payload.decision, "proposal_id": str(proposal_id), "session_id": str(remix_id)})
+        UPDATE remix_patch_proposals AS proposal
+        SET status = :decision, reviewed_at = now(), updated_at = now()
+        WHERE proposal.id = CAST(:proposal_id AS uuid)
+          AND proposal.session_id = CAST(:session_id AS uuid)
+          AND proposal.status = 'proposed'
+          AND EXISTS (
+              SELECT 1 FROM remix_sessions AS rs
+              JOIN apps ON apps.id = rs.app_id
+              WHERE rs.id = proposal.session_id
+                AND rs.owner_id = CAST(:owner_id AS uuid)
+                AND rs.source_commit_sha = proposal.base_commit_sha
+                AND apps.latest_commit_sha = proposal.base_commit_sha
+          )
+        RETURNING proposal.id::text AS id, proposal.session_id::text AS session_id,
+                  proposal.base_commit_sha, proposal.status, proposal.summary,
+                  proposal.proposal, proposal.source_files, proposal.validation_status,
+                  proposal.reviewed_at, proposal.created_at, proposal.updated_at
+    """), {
+        "decision": payload.decision, "proposal_id": str(proposal_id),
+        "session_id": str(remix_id), "owner_id": user["id"],
+    })
     row = result.mappings().first()
     if row is None:
         raise HTTPException(status_code=409, detail="Proposal is missing or has already been reviewed")
