@@ -19,7 +19,7 @@ class FakeRedis:
 
 
 async def test_remix_rate_limit_uses_user_scoped_hour_window(monkeypatch):
-    import app.redis_client as redis_client
+    from app import redis_client
 
     fake = FakeRedis(12)
     monkeypatch.setattr(redis_client, "_client", fake)
