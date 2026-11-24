@@ -9,7 +9,7 @@ import asyncpg
 
 from app.config import get_settings
 
-_MIGRATION_NAME = re.compile(r"^[0-9]{3}_[a-z0-9_]+\\.sql$")
+_MIGRATION_NAME = re.compile(r"^[0-9]{3}_[a-z0-9_]+\.sql$")
 _LOCK_KEY = "vibestore_schema_migrations"
 
 
@@ -26,7 +26,7 @@ async def apply_migrations() -> list[str]:
     if not files:
         raise RuntimeError(f"No SQL migrations found in {migration_dir}")
     for path in files:
-        if not _MIGRATION_NAME.fullmatch(path.name):
+_MIGRATION_NAME = re.compile(r"^[0-9]{3}_[a-z0-9_]+\.sql$")
             raise RuntimeError(f"Invalid migration filename: {path.name}")
 
     connection = await asyncpg.connect(_database_dsn())
