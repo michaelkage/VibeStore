@@ -247,7 +247,11 @@ class VibeStoreApi {
   Future<Map<String, dynamic>> sendRemixMessage(
     String remixId,
     String content,
-  ) => _post('remixes/$remixId/messages', {'content': content.trim()});
+  ) => _post(
+    'remixes/$remixId/messages',
+    {'content': content.trim()},
+    timeout: const Duration(seconds: 110),
+  );
 
   Future<dynamic> _get(String path) async {
     if (_baseUrl.isEmpty) {
@@ -283,8 +287,9 @@ class VibeStoreApi {
 
   Future<Map<String, dynamic>> _post(
     String path,
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    Duration timeout = _timeout,
+  }) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
         'Configure the VibeStore API address first.',
@@ -304,7 +309,7 @@ class VibeStoreApi {
           headers: headers,
           body: jsonEncode(payload),
         )
-        .timeout(_timeout);
+        .timeout(timeout);
     dynamic decoded;
     try {
       decoded = jsonDecode(response.body);
