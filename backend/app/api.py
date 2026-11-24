@@ -742,8 +742,9 @@ async def add_remix_message(
 ):
     owned = await session.execute(
         text("""
-            SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha
-            FROM remix_sessions rs
+            SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha,
+                   apps.latest_commit_sha
+            FROM remix_sessions rs JOIN apps ON apps.id = rs.app_id
             WHERE rs.id = CAST(:id AS uuid) AND rs.owner_id = CAST(:owner_id AS uuid)
               AND rs.status = 'planning'
         """),
@@ -752,6 +753,8 @@ async def add_remix_message(
     remix = owned.mappings().first()
     if remix is None:
         raise HTTPException(status_code=404, detail="Active remix session not found")
+    if remix["latest_commit_sha"] != remix["source_commit_sha"]:
+        raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session to use the latest source snapshot")
     message_id = str(uuid4())
     inserted = await session.execute(
         text("""
