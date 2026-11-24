@@ -30,7 +30,7 @@ async def test_remix_rate_limit_uses_user_scoped_hour_window(monkeypatch):
 async def test_remix_rate_limit_rejects_excessive_requests(monkeypatch):
     import pytest
     from fastapi import HTTPException
-    import app.redis_client as redis_client
+    from app import redis_client
 
     monkeypatch.setattr(redis_client, "_client", FakeRedis(31))
     with pytest.raises(HTTPException) as error:
