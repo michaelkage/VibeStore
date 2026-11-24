@@ -238,10 +238,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   Future<void> _openRemix(String remixId) => _run(() async {
     await _api!.configureBaseUrl(_baseUrlController.text);
     final session = await _api!.remixSession(remixId);
+    final proposals = await _api!.remixPatchProposals(remixId);
     if (!mounted) return;
     setState(() {
       _activeRemix = session;
-      _remixProposals = await _api!.remixPatchProposals(remixId);
+      _remixProposals = proposals;
       _notice = 'Opened remix session: ${session['title']}.';
     });
   });
@@ -813,21 +814,6 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       Text(
                         'Patch drafts are review-only. Approving records your decision; it does not edit files or run a build.',
                         style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Planning only: no source files are edited and no code or APK is executed or built.',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      /* legacy action replaced */ 
-                      if (false)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: FilledButton.icon(
-                            onPressed: _busy ? null : _sendRemixMessage,
-                          icon: const Icon(Icons.auto_awesome_rounded),
-                          label: const Text('Generate change plan'),
-                        ),
                       ),
                       const SizedBox(height: 8),
                       Text(
