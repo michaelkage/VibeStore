@@ -219,6 +219,38 @@ class VibeStoreApi {
     return decoded;
   }
 
+  Future<List<Map<String, dynamic>>> remixSessions() async {
+    final response = await _get('remixes');
+    if (response is! List) {
+      throw const VibeStoreApiException('The remix session response was invalid.');
+    }
+    return response.map((value) => Map<String, dynamic>.from(value as Map)).toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> createRemixSession(String appId, {String title = 'New remix'}) =>
+      _post('remixes', {'app_id': appId, 'title': title});
+
+  Future<Map<String, dynamic>> remixSession(String remixId) async {
+    final response = await _get('remixes/$remixId');
+    if (response is! Map<String, dynamic>) {
+      throw const VibeStoreApiException('The remix session response was invalid.');
+    }
+    return response;
+  }
+
+  Future<Map<String, dynamic>> sendRemixMessage(String remixId, String content) =>
+      _post('remixes/$remixId/messages', {'content': content.trim()});
+
+  Future<dynamic> _get(String path) async {
+    if (_baseUrl.isEmpty) {
+      throw const VibeStoreApiException('Configure the VibeStore API address first.');
+    }
+    final response = await _client
+        .get(Uri.parse('$_baseUrl/api/v1/$path'), headers: _authorizedHeaders())
+        .timeout(_timeout);
+    return _decodeResponse(response);
+  }
+
   Future<Map<String, dynamic>> indexRepository(String repositoryUrl) =>
       _post('repositories/index', {'repository_url': repositoryUrl.trim()});
 
