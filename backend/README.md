@@ -25,6 +25,7 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/008_remix_sessions.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/009_remix_patch_proposals.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/010_remix_patch_validation.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/011_isolated_patch_artifacts.sql
 ```
 
 OpenAPI: http://localhost:8000/docs  
