@@ -20,7 +20,8 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authen
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql\ndocker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/008_remix_sessions.sql
 ```
 
@@ -40,7 +41,16 @@ Health: http://localhost:8000/health
 - `GET /api/v1/repositories/mine`: list only the authenticated user's repository submissions.
 - `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
-- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.\n- `GET /api/v1/apps/{app_id}/inspection`: read the latest cached X-Ray report.\n- `POST /api/v1/remixes`: create a commit-pinned remix planning session.\n- `GET /api/v1/remixes`: list the caller's sessions.\n- `GET /api/v1/remixes/{remix_id}`: retrieve an owned session and conversation.\n- `POST /api/v1/remixes/{remix_id}/messages`: append a prompt and generate an evidence-bounded change plan.: return the latest cached inspection report for an indexed catalog app, including the source commit SHA.\n- `POST /api/v1/remixes`: create an owner-scoped remix planning session pinned to the app's current indexed commit.\n- `GET /api/v1/remixes`: list the authenticated user's remix sessions.\n- `GET /api/v1/remixes/{remix_id}`: read an owned session and its conversation.\n- `POST /api/v1/remixes/{remix_id}/messages`: save a prompt and generate an evidence-bounded change plan; requires a configured AI provider.
+- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.
+- `GET /api/v1/apps/{app_id}/inspection`: read the latest cached X-Ray report.
+- `POST /api/v1/remixes`: create a commit-pinned remix planning session.
+- `GET /api/v1/remixes`: list the caller's sessions.
+- `GET /api/v1/remixes/{remix_id}`: retrieve an owned session and conversation.
+- `POST /api/v1/remixes/{remix_id}/messages`: append a prompt and generate an evidence-bounded change plan.: return the latest cached inspection report for an indexed catalog app, including the source commit SHA.
+- `POST /api/v1/remixes`: create an owner-scoped remix planning session pinned to the app's current indexed commit.
+- `GET /api/v1/remixes`: list the authenticated user's remix sessions.
+- `GET /api/v1/remixes/{remix_id}`: read an owned session and its conversation.
+- `POST /api/v1/remixes/{remix_id}/messages`: save a prompt and generate an evidence-bounded change plan; requires a configured AI provider.
 
 ## Authentication security
 
