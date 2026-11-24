@@ -151,3 +151,24 @@ class RemixSessionResponse(BaseModel):
     updated_at: datetime
     messages: list[RemixMessageResponse] = Field(default_factory=list)
 
+
+class RemixPatchProposalCreateRequest(BaseModel):
+    content: str = Field(min_length=3, max_length=4_000)
+
+
+class RemixPatchProposalReviewRequest(BaseModel):
+    decision: str = Field(pattern=r"^(approved|rejected)$")
+
+
+class RemixPatchProposalResponse(BaseModel):
+    id: str
+    session_id: str
+    base_commit_sha: str
+    status: str
+    summary: str
+    proposal: dict
+    source_files: list[dict]
+    validation_status: str
+    reviewed_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
