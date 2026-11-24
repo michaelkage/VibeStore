@@ -253,6 +253,35 @@ class VibeStoreApi {
     'content': content.trim(),
   }, timeout: const Duration(seconds: 110));
 
+  Future<List<Map<String, dynamic>>> remixPatchProposals(String remixId) async {
+    final response = await _get('remixes/$remixId/proposals');
+    if (response is! List) {
+      throw const VibeStoreApiException(
+        'The remix proposal response was invalid.',
+      );
+    }
+    return response
+        .map((value) => Map<String, dynamic>.from(value as Map))
+        .toList(growable: false);
+  }
+
+  Future<Map<String, dynamic>> generateRemixPatchProposal(
+    String remixId,
+    String content,
+  ) => _post(
+    'remixes/$remixId/proposals',
+    {'content': content.trim()},
+    timeout: const Duration(seconds: 110),
+  );
+
+  Future<Map<String, dynamic>> reviewRemixPatchProposal(
+    String remixId,
+    String proposalId,
+    String decision,
+  ) => _post('remixes/$remixId/proposals/$proposalId/review', {
+    'decision': decision,
+  });
+
   Future<dynamic> _get(String path) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
