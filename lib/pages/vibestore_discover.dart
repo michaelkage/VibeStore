@@ -21,10 +21,13 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   final _passwordController = TextEditingController();
   final _queryController = TextEditingController();
   final _repositoryController = TextEditingController();
+  final _remixPromptController = TextEditingController();
 
   VibeStoreApi? _api;
   List<Map<String, dynamic>> _results = [];
   List<Map<String, dynamic>> _submissions = [];
+  List<Map<String, dynamic>> _remixSessions = [];
+  Map<String, dynamic>? _activeRemix;
   String? _inspection;
   String? _notice;
   String? _error;
@@ -82,6 +85,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     _passwordController.dispose();
     _queryController.dispose();
     _repositoryController.dispose();
+    _remixPromptController.dispose();
     super.dispose();
   }
 
@@ -196,6 +200,57 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     throw VibeStoreApiException(
       'Indexing is still running. Job ID: $jobId. Refresh the collection later.',
     );
+  });
+
+  Future<void> _loadRemixSessions() => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final sessions = await _api!.remixSessions();
+    if (!mounted) return;
+    setState(() {
+      _remixSessions = sessions;
+      _notice = '${sessions.length} remix session(s) loaded.';
+    });
+  });
+
+  Future<void> _createRemix(String appId, String appName) => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final created = await _api!.createRemixSession(appId, title: 'Remix · $appName');
+    final session = await _api!.remixSession(created['id'].toString());
+    final sessions = await _api!.remixSessions();
+    if (!mounted) return;
+    setState(() {
+      _activeRemix = session;
+      _remixSessions = sessions;
+      _remixPromptController.clear();
+      _notice = 'Remix session created for $appName at commit ${session['source_commit_sha']}.';
+    });
+  });
+
+  Future<void> _openRemix(String remixId) => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final session = await _api!.remixSession(remixId);
+    if (!mounted) return;
+    setState(() {
+      _activeRemix = session;
+      _notice = 'Opened remix session: ${session['title']}.';
+    });
+  });
+
+  Future<void> _sendRemixMessage() => _run(() async {
+    final active = _activeRemix;
+    final prompt = _remixPromptController.text.trim();
+    if (active == null || prompt.length < 3) {
+      throw const VibeStoreApiException('Enter a change request with at least 3 characters.');
+    }
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    await _api!.sendRemixMessage(active['id'].toString(), prompt);
+    final session = await _api!.remixSession(active['id'].toString());
+    if (!mounted) return;
+    setState(() {
+      _activeRemix = session;
+      _remixPromptController.clear();
+      _notice = 'Change plan generated. Review the evidence and validation steps below.';
+    });
   });
 
   Future<void> _removeSubmission(String appId, String name) => _run(() async {
@@ -464,11 +519,124 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                             result['repository_url']?.toString() ?? '',
                           ].where((value) => value.isNotEmpty).join('\n'),
                         ),
-                        trailing: Text(
-                          (result['score'] as num?)?.toStringAsFixed(2) ?? '',
+                        trailing: Wrap(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (api.isAuthenticated)
+                              IconButton(
+                                tooltip: 'Start a remix',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _createRemix(
+                                        result['id'].toString(),
+                                        result['name']?.toString() ?? 'app',
+                                      ),
+                                icon: const Icon(Icons.auto_awesome_rounded),
+                              ),
+                            Text(
+                              (result['score'] as num?)?.toStringAsFixed(2) ?? '',
+                            ),
+                          ],
                         ),
                         isThreeLine: true,
                       ),
+                  ],
+                ]),
+                _section('Remix Studio', Icons.auto_awesome_rounded, [
+                  if (!api.isAuthenticated)
+                    const Text('Sign in to create and continue your private remix sessions.')
+                  else ...[
+                    Row(
+                      children: [
+                        const Expanded(child: Text('Your planning sessions')),
+                        IconButton(
+                          tooltip: 'Refresh remix sessions',
+                          onPressed: _busy ? null : _loadRemixSessions,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                      ],
+                    ),
+                    if (_remixSessions.isEmpty)
+                      const Text('No remix sessions loaded. Start one from a catalog search result, or refresh this list.')
+                    else
+                      for (final remix in _remixSessions)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          selected: _activeRemix?['id'] == remix['id'],
+                          leading: const Icon(Icons.edit_note_rounded),
+                          title: Text(remix['title']?.toString() ?? 'Untitled remix'),
+                          subtitle: Text('${remix['app_name'] ?? 'App'} · ${(remix['source_commit_sha']?.toString() ?? '').substring(0, (remix['source_commit_sha']?.toString() ?? '').length.clamp(0, 10))}'),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: _busy ? null : () => _openRemix(remix['id'].toString()),
+                        ),
+                    if (_activeRemix case final active?) ...[
+                      const Divider(height: 24),
+                      Text(active['title']?.toString() ?? 'Active remix', style: Theme.of(context).textTheme.titleMedium),
+                      Text(
+                        '${active['app_name'] ?? 'App'} · pinned to ${active['source_commit_sha'] ?? 'unknown commit'}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      for (final message in (active['messages'] as List? ?? const []))
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    message['role'] == 'assistant' ? Icons.auto_awesome : Icons.person_outline,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    message['role'] == 'assistant' ? 'VibeStore plan' : 'You',
+                                    style: Theme.of(context).textTheme.labelLarge,
+                                  ),
+                                  const Spacer(),
+                                  if (message['message_type'] == 'change_plan')
+                                    const Chip(label: Text('Plan')),
+                                ],
+                              ),
+                              const SizedBox(height: 6),
+                              SelectableText(message['content']?.toString() ?? ''),
+                              if ((message['evidence'] as List? ?? const []).isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Evidence: ${(message['evidence'] as List).map((item) => item is Map ? item['path'] : '').where((path) => path.toString().isNotEmpty).join(', ')}',
+                                  style: Theme.of(context).textTheme.bodySmall,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      TextField(
+                        controller: _remixPromptController,
+                        minLines: 2,
+                        maxLines: 5,
+                        maxLength: 4000,
+                        decoration: const InputDecoration(
+                          labelText: 'Describe the change you want',
+                          hintText: 'Add biometric unlock, redesign the settings screen…',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed: _busy ? null : _sendRemixMessage,
+                          icon: const Icon(Icons.auto_awesome_rounded),
+                          label: const Text('Generate change plan'),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Planning only: no source files are edited and no code or APK is executed or built.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
                   ],
                 ]),
                 _section(
