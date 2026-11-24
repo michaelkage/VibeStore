@@ -930,6 +930,9 @@ async def validate_remix_patch_proposal(
         raise HTTPException(status_code=409, detail="Only pending proposals can be validated")
     if row["source_commit_sha"] != row["base_commit_sha"] or row["latest_commit_sha"] != row["base_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed; this proposal is pinned to an outdated revision")
+    if row["validation_status"] == "applicable":
+        return RemixPatchProposalResponse(**dict(row))
+    await enforce_remix_rate_limit(user["id"])
     try:
         complete_sources = await fetch_repository_files_at_commit(
             row["repository_url"], row["base_commit_sha"], row["source_files"],
