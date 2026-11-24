@@ -24,6 +24,7 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalo
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/008_remix_sessions.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/009_remix_patch_proposals.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/010_remix_patch_validation.sql
 ```
 
 OpenAPI: http://localhost:8000/docs  
@@ -48,9 +49,10 @@ Health: http://localhost:8000/health
 - `GET /api/v1/remixes`: list the authenticated user's remix sessions.
 - `GET /api/v1/remixes/{remix_id}`: retrieve an owned session and its conversation.
 - `POST /api/v1/remixes/{remix_id}/messages`: append a prompt and generate an evidence-bounded change plan (requires a configured AI provider).
-- `POST /api/v1/remixes/{remix_id}/proposals`: generate a structured, review-only unified-diff proposal against indexed file paths and hashes.
-- `GET /api/v1/remixes/{remix_id}/proposals`: list proposals belonging to an owned remix session.
-- `POST /api/v1/remixes/{remix_id}/proposals/{proposal_id}/review`: approve or reject a proposal; approval records a review decision only and never applies the diff.
+- `POST /api/v1/remixes/{remix_id}/proposals`: generate a structured unified-diff proposal against indexed file paths and hashes.
+- `GET /api/v1/remixes/{remix_id}/proposals`: list proposals belonging to an owned remix session, including persisted validation reports.
+- `POST /api/v1/remixes/{remix_id}/proposals/{proposal_id}/validate`: retrieve complete source blobs at the pinned commit, verify Git tree/blob hashes, and check all diff hunks in memory.
+- `POST /api/v1/remixes/{remix_id}/proposals/{proposal_id}/review`: approve a proposal only after successful source validation, or reject it at any time; approval records a human decision and never applies the diff.
 
 ## Authentication security
 
@@ -105,6 +107,6 @@ No source files are modified. No repository code, Gradle task, shell command or 
 
 ## Reviewable remix patch proposals
 
-Migration `009_remix_patch_proposals.sql` stores structured AI-authored patch drafts under the owner-scoped remix session. Every proposal is pinned to the session's base commit SHA and records the indexed Git blob hashes for the affected files. The generator is restricted to the indexed path allowlist, accepts only bounded unified diffs with matching file headers and hunks, rejects traversal/absolute paths, duplicate paths, binary patches and oversized responses, and never accepts new/deleted/renamed files.
+Migration `009_remix_patch_proposals.sql` stores structured AI-authored patch drafts under the owner-scoped remix session. Every proposal is pinned to the session's base commit SHA and records the indexed Git blob hashes for the affected files. The generator is restricted to the indexed path allowlist, accepts only bounded unified diffs with matching file headers and hunks, rejects traversal/absolute paths, duplicate paths, binary patches and oversized responses, and never accepts new/deleted/renamed files. Indexing fetches the tree and raw files from the same captured commit SHA so branch movement cannot mix snapshots.
 
-The proposal lifecycle is `proposed` → `approved` or `rejected`. Review transitions are owner-scoped and can occur only once. **Approval is an acknowledgement for human review; it does not apply patches, write to GitHub, modify a checkout, run commands or build an APK.** Proposals are labelled `review_only`: the index stores excerpts rather than guaranteed complete source files, so these drafts are not asserted to be safely applicable. A future patch-application milestone must retrieve full source at the pinned commit, verify blob hashes, parse and apply hunks in an isolated workspace, and produce a separately reviewable result before any build is considered.
+Proposal review states are `proposed` → `approved` or `rejected`; validation states are `review_only`, `applicable` or `invalid`. Review transitions are owner-scoped and can occur only once. Migration `010_remix_patch_validation.sql` stores the validation report. The validation endpoint retrieves the Git commit and recursive tree, confirms every affected path points to the indexed Git blob SHA, downloads each complete blob (maximum 1 MB per file), recomputes the canonical Git blob SHA-1, requires UTF-8 text, and checks each unified-diff hunk against the exact source lines in memory. It rejects stale revisions, mismatched context and no-op diffs. **Approval is available only after validation succeeds; it is still an acknowledgement for human review and does not apply patches, write to GitHub, modify a checkout, run commands or build an APK.** Validation is not compilation or runtime testing. A future patch-application milestone still needs an isolated workspace, a separately reviewable applied result, and a distinct explicit apply step before any build is considered.
