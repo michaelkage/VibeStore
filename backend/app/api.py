@@ -756,7 +756,7 @@ async def add_remix_message(
     if remix["latest_commit_sha"] != remix["source_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session to use the latest source snapshot")
     message_id = str(uuid4())
-    inserted = await session.execute(
+    await session.execute(
         text("""
             INSERT INTO remix_messages (id, session_id, role, content, message_type)
             VALUES (CAST(:id AS uuid), CAST(:session_id AS uuid), 'user', :content, 'text')
