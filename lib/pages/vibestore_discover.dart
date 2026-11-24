@@ -782,7 +782,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                       .isNotEmpty) ...[
                                     Text(
                                       'Validation steps',
-                                      style: Theme.of(context).textTheme.labelLarge,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.labelLarge,
                                     ),
                                     for (final step
                                         in ((proposal['proposal']
