@@ -999,7 +999,7 @@ async def review_remix_patch_proposal(
         WHERE proposal.id = CAST(:proposal_id AS uuid)
           AND proposal.session_id = CAST(:session_id AS uuid)
           AND proposal.status = 'proposed'
-          AND proposal.validation_status = 'applicable'
+          AND (:decision = 'rejected' OR proposal.validation_status = 'applicable')
           AND EXISTS (
               SELECT 1 FROM remix_sessions AS rs
               JOIN apps ON apps.id = rs.app_id
