@@ -23,6 +23,7 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/008_remix_sessions.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/009_remix_patch_proposals.sql
 ```
 
 OpenAPI: http://localhost:8000/docs  
@@ -47,6 +48,9 @@ Health: http://localhost:8000/health
 - `GET /api/v1/remixes`: list the authenticated user's remix sessions.
 - `GET /api/v1/remixes/{remix_id}`: retrieve an owned session and its conversation.
 - `POST /api/v1/remixes/{remix_id}/messages`: append a prompt and generate an evidence-bounded change plan (requires a configured AI provider).
+- `POST /api/v1/remixes/{remix_id}/proposals`: generate a structured, review-only unified-diff proposal against indexed file paths and hashes.
+- `GET /api/v1/remixes/{remix_id}/proposals`: list proposals belonging to an owned remix session.
+- `POST /api/v1/remixes/{remix_id}/proposals/{proposal_id}/review`: approve or reject a proposal; approval records a review decision only and never applies the diff.
 
 ## Authentication security
 
@@ -97,3 +101,10 @@ Migration `008_remix_sessions.sql` adds owner-scoped remix sessions and conversa
 The first implementation is deliberately a **planning-only** slice. A configured provider receives the latest bounded conversation and at most 12 indexed file excerpts (up to 6,000 characters each), selected with Android manifests and Gradle files prioritized. The prompt treats repository content as untrusted evidence and asks for a Markdown plan with affected paths, steps, risks and validation. Assistant messages store the evidence file paths used. Prompt and response sizes are bounded. Redis enforces a fail-closed limit of 30 AI planning requests per account per hour.
 
 No source files are modified. No repository code, Gradle task, shell command or APK is executed. There is no cloud build, signing-key handling, artifact storage or delivery in this slice. Those capabilities require a separate disposable, network-restricted build environment and isolated signing service; they must not be added to the API process.
+
+
+## Reviewable remix patch proposals
+
+Migration `009_remix_patch_proposals.sql` stores structured AI-authored patch drafts under the owner-scoped remix session. Every proposal is pinned to the session's base commit SHA and records the indexed Git blob hashes for the affected files. The generator is restricted to the indexed path allowlist, accepts only bounded unified diffs with matching file headers and hunks, rejects traversal/absolute paths, duplicate paths, binary patches and oversized responses, and never accepts new/deleted/renamed files.
+
+The proposal lifecycle is `proposed` → `approved` or `rejected`. Review transitions are owner-scoped and can occur only once. **Approval is an acknowledgement for human review; it does not apply patches, write to GitHub, modify a checkout, run commands or build an APK.** Proposals are labelled `review_only`: the index stores excerpts rather than guaranteed complete source files, so these drafts are not asserted to be safely applicable. A future patch-application milestone must retrieve full source at the pinned commit, verify blob hashes, parse and apply hunks in an isolated workspace, and produce a separately reviewable result before any build is considered.
