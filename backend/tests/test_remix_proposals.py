@@ -122,7 +122,14 @@ def test_apply_unified_diff_supports_insertions_at_start():
 
 
 def test_validate_patch_against_sources_reports_hashes_without_writing_files():
-    proposal = remix_proposals.validate_proposal(_proposal(), FILES)
+    path = FILES[0]["path"]
+    proposal = remix_proposals.validate_proposal(
+        _proposal(diff=(
+            f"--- a/{path}\n+++ b/{path}\n@@ -1 +1 @@\n"
+            "-class MainActivity\n+class MainActivityV2\n"
+        )),
+        FILES,
+    )
     source = "class MainActivity\n"
     report = remix_proposals.validate_patch_against_sources(
         proposal,
@@ -144,3 +151,19 @@ def test_validate_patch_against_sources_rejects_missing_complete_source():
     proposal = remix_proposals.validate_proposal(_proposal(), FILES)
     with pytest.raises(ValueError, match="Complete pinned source is missing"):
         remix_proposals.validate_patch_against_sources(proposal, {})
+
+
+
+def test_validate_patch_against_sources_rejects_noop_diffs():
+    proposal = remix_proposals.validate_proposal(_proposal(), FILES)
+    with pytest.raises(ValueError, match="does not change the source"):
+        remix_proposals.validate_patch_against_sources(
+            proposal,
+            {
+                FILES[0]["path"]: {
+                    "content": "class MainActivity",
+                    "content_sha": "verified-git-blob",
+                    "size": len("class MainActivity"),
+                },
+            },
+        )
