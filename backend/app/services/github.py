@@ -138,7 +138,7 @@ _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _git_blob_sha(content: bytes) -> str:
-    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
+    return hashlib.sha1(\n        b"blob " + str(len(content)).encode() + b"\0" + content,\n        usedforsecurity=False,\n    ).hexdigest()
 
 
 async def fetch_repository_files_at_commit(
