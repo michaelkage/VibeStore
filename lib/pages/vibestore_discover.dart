@@ -214,9 +214,12 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
 
   Future<void> _createRemix(String appId, String appName) => _run(() async {
     await _api!.configureBaseUrl(_baseUrlController.text);
+    final safeName = appName.length > 110
+        ? '${appName.substring(0, 107)}…'
+        : appName;
     final created = await _api!.createRemixSession(
       appId,
-      title: 'Remix · $appName',
+      title: 'Remix · $safeName',
     );
     final session = await _api!.remixSession(created['id'].toString());
     final sessions = await _api!.remixSessions();
