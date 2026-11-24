@@ -954,6 +954,14 @@ async def validate_remix_patch_proposal(
         WHERE id = CAST(:proposal_id AS uuid)
           AND session_id = CAST(:session_id AS uuid)
           AND status = 'proposed'
+          AND EXISTS (
+              SELECT 1 FROM remix_sessions AS rs
+              JOIN apps ON apps.id = rs.app_id
+              WHERE rs.id = remix_patch_proposals.session_id
+                AND rs.owner_id = CAST(:owner_id AS uuid)
+                AND rs.source_commit_sha = remix_patch_proposals.base_commit_sha
+                AND apps.latest_commit_sha = remix_patch_proposals.base_commit_sha
+          )
         RETURNING id::text AS id, session_id::text AS session_id, base_commit_sha,
                   status, summary, proposal, source_files, validation_status,
                   validation_report, reviewed_at, created_at, updated_at
@@ -962,6 +970,7 @@ async def validate_remix_patch_proposal(
         "validation_report": json.dumps(report),
         "proposal_id": str(proposal_id),
         "session_id": str(remix_id),
+        "owner_id": user["id"],
     })
     saved = updated.mappings().first()
     if saved is None:
