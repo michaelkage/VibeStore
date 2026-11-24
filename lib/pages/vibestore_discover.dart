@@ -876,20 +876,20 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                           ),
                                         if (proposal['validation_status'] ==
                                             'applicable')
-                                        OutlinedButton.icon(
-                                          onPressed: _busy
-                                              ? null
-                                              : () => _reviewPatchProposal(
-                                                  proposal['id'].toString(),
-                                                  'approved',
-                                                ),
-                                          icon: const Icon(
-                                            Icons.check_circle_outline,
+                                          OutlinedButton.icon(
+                                            onPressed: _busy
+                                                ? null
+                                                : () => _reviewPatchProposal(
+                                                    proposal['id'].toString(),
+                                                    'approved',
+                                                  ),
+                                            icon: const Icon(
+                                              Icons.check_circle_outline,
+                                            ),
+                                            label: const Text(
+                                              'Approve proposal',
+                                            ),
                                           ),
-                                          label: const Text(
-                                            'Approve for review',
-                                          ),
-                                        ),
                                         TextButton.icon(
                                           onPressed: _busy
                                               ? null
@@ -903,6 +903,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                           label: const Text('Reject'),
                                         ),
                                       ],
+                                    ),
+                                ],
                                     ),
                                 ],
                               ),
