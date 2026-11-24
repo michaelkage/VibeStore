@@ -163,6 +163,8 @@ def validate_patch_against_sources(proposal: dict, source_files: dict[str, dict]
         if source is None:
             raise ValueError(f"Complete pinned source is missing: {path}")
         updated = apply_unified_diff_to_text(source["content"], item["diff"], path)
+        if updated == source["content"]:
+            raise ValueError(f"Diff does not change the source file: {path}")
         result_bytes = updated.encode("utf-8")
         validated.append({
             "path": path,
