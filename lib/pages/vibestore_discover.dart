@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/services/vibestore_api.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -326,6 +328,50 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
               : 'Proposal rejected. No files were modified.';
         });
       });
+
+  Future<void> _processApprovedProposal(String proposalId) => _run(() async {
+    final active = _activeRemix;
+    if (active == null) return;
+    final remixId = active['id'].toString();
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    await _api!.processApprovedPatch(remixId, proposalId);
+    for (var attempt = 0; attempt < 60; attempt++) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      final response = await _api!.patchArtifact(remixId, proposalId);
+      if (response.headers['content-type']?.contains('application/zip') ??
+          false) {
+        final savedPath = await FilePicker.platform.saveFile(
+          fileName: 'vibestore-patch-$proposalId.zip',
+          bytes: response.bodyBytes,
+        );
+        if (!mounted) return;
+        setState(() {
+          _notice = savedPath == null
+              ? 'Source ZIP is ready; saving was cancelled.'
+              : 'Review-only source ZIP saved to $savedPath';
+        });
+        return;
+      }
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      final status = decoded is Map
+          ? decoded['status']?.toString() ?? 'processing'
+          : 'processing';
+      if (status == 'failed') {
+        throw VibeStoreApiException(
+          decoded is Map
+              ? decoded['error']?.toString() ?? 'Patch processing failed.'
+              : 'Patch processing failed.',
+        );
+      }
+      if (mounted) {
+        setState(() => _notice = 'Preparing changed-source ZIP… $status');
+      }
+    }
+    throw const VibeStoreApiException(
+      'Source ZIP preparation is still running. Reopen the proposal and try again shortly.',
+    );
+  });
 
   Future<void> _removeSubmission(String appId, String name) => _run(() async {
     await _api!.removeMyRepository(appId);
@@ -858,6 +904,21 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                         ),
                                       ],
                                     ),
+                                  if (proposal['status'] == 'approved')
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _busy
+                                            ? null
+                                            : () => _processApprovedProposal(
+                                                proposal['id'].toString(),
+                                              ),
+                                        icon: const Icon(
+                                          Icons.archive_outlined,
+                                        ),
+                                        label: const Text('Prepare source ZIP'),
+                                      ),
+                                    ),
                                   if (proposal['status'] == 'proposed')
                                     Wrap(
                                       spacing: 8,
@@ -948,7 +1009,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Planning only: no source files are edited and no code or APK is executed or built.',
+                        'Approved diffs can be materialized into a review-only changed-source ZIP. This is not a complete checkout and does not run Gradle or produce an APK.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
