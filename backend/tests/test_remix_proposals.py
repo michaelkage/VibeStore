@@ -72,3 +72,73 @@ async def test_generate_patch_proposal_validates_provider_output(monkeypatch):
     monkeypatch.setattr(remix_proposals, "get_ai_provider", lambda: Provider())
     result = await remix_proposals.generate_patch_proposal(request="Change theme", files=FILES)
     assert result["files"][0]["path"] == "app/src/MainActivity.kt"
+
+
+def test_apply_unified_diff_checks_context_and_produces_expected_source():
+    source = "class MainActivity {\\n    fun title() = \\"Old\\"\\n}\\n"
+    diff = (
+        "--- a/app/src/MainActivity.kt\\n"
+        "+++ b/app/src/MainActivity.kt\\n"
+        "@@ -1,3 +1,3 @@\\n"
+        " class MainActivity {\\n"
+        "-    fun title() = \\"Old\\"\\n"
+        "+    fun title() = \\"New\\"\\n"
+        " }\\n"
+    )
+    updated = remix_proposals.apply_unified_diff_to_text(
+        source, diff, "app/src/MainActivity.kt",
+    )
+    assert updated == "class MainActivity {\\n    fun title() = \\"New\\"\\n}\\n"
+
+
+def test_apply_unified_diff_rejects_context_that_does_not_match_pinned_source():
+    source = "class MainActivity {\\n    fun title() = \\"Old\\"\\n}\\n"
+    diff = (
+        "--- a/app/src/MainActivity.kt\\n"
+        "+++ b/app/src/MainActivity.kt\\n"
+        "@@ -1,3 +1,3 @@\\n"
+        " class MainActivity {\\n"
+        "-    fun title() = \\"Different\\"\\n"
+        "+    fun title() = \\"New\\"\\n"
+        " }\\n"
+    )
+    with pytest.raises(ValueError, match="context does not match"):
+        remix_proposals.apply_unified_diff_to_text(
+            source, diff, "app/src/MainActivity.kt",
+        )
+
+
+def test_apply_unified_diff_supports_insertions_at_start():
+    diff = (
+        "--- a/app/src/MainActivity.kt\\n"
+        "+++ b/app/src/MainActivity.kt\\n"
+        "@@ -0,0 +1 @@\\n"
+        "+// reviewed addition\\n"
+    )
+    assert remix_proposals.apply_unified_diff_to_text(
+        "class MainActivity\\n", diff, "app/src/MainActivity.kt",
+    ) == "// reviewed addition\\nclass MainActivity\\n"
+
+
+def test_validate_patch_against_sources_reports_hashes_without_writing_files():
+    proposal = remix_proposals.validate_proposal(_proposal(), FILES)
+    report = remix_proposals.validate_patch_against_sources(
+        proposal,
+        {
+            FILES[0]["path"]: {
+                "content": "class MainActivity\\n",
+                "content_sha": "verified-git-blob",
+                "size": 20,
+            },
+        },
+    )
+    assert report["status"] == "applicable"
+    assert report["files"][0]["source_blob_sha"] == "verified-git-blob"
+    assert len(report["files"][0]["result_sha256"]) == 64
+    assert "No files were written" in report["message"]
+
+
+def test_validate_patch_against_sources_rejects_missing_complete_source():
+    proposal = remix_proposals.validate_proposal(_proposal(), FILES)
+    with pytest.raises(ValueError, match="Complete pinned source is missing"):
+        remix_proposals.validate_patch_against_sources(proposal, {})
