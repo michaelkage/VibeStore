@@ -104,11 +104,15 @@ def apply_unified_diff_to_text(source: str, diff: str, path: str) -> str:
             raise ValueError("Unified diff contains an unsupported or malformed hunk")
         old_start = int(match.group(1))
         old_count = int(match.group(2) or 1)
+        new_start = int(match.group(3))
         new_count = int(match.group(4) or 1)
         hunk_source_start = old_start if old_count == 0 else old_start - 1
         if hunk_source_start < source_cursor or hunk_source_start > len(source_lines):
             raise ValueError("Diff hunk starts outside the pinned source")
         output.extend(source_lines[source_cursor:hunk_source_start])
+        expected_new_start = len(output) if new_count == 0 else len(output) + 1
+        if new_start != expected_new_start:
+            raise ValueError("Diff hunk new-file position is inconsistent")
         source_cursor = hunk_source_start
         consumed_old = 0
         produced_new = 0
