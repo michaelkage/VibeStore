@@ -45,10 +45,10 @@ from app.schemas import (
     RemixPatchProposalResponse,
 )
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
-from app.services.github import fetch_repository_files, fetch_repository_snapshot, parse_github_url
+from app.services.github import (\n    fetch_repository_files, fetch_repository_files_at_commit,\n    fetch_repository_snapshot, parse_github_url,\n)
 from app.services.manifest import inspect_manifest
 from app.services.remix import generate_change_plan
-from app.services.remix_proposals import generate_patch_proposal
+from app.services.remix_proposals import generate_patch_proposal, validate_patch_against_sources
 
 router = APIRouter()
 
@@ -890,6 +890,76 @@ async def create_remix_patch_proposal(
            "summary": proposal["summary"], "proposal": json.dumps(proposal), "source_files": json.dumps(source_files)})
     await session.commit()
     return RemixPatchProposalResponse(**dict(inserted.mappings().one()))
+
+
+@router.post(
+    "/remixes/{remix_id}/proposals/{proposal_id}/validate",
+    response_model=RemixPatchProposalResponse,
+    tags=["remix"],
+)
+async def validate_remix_patch_proposal(
+    remix_id: UUID, proposal_id: UUID,
+    user=Depends(get_current_user), session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(text("""
+        SELECT proposal.id::text AS id, proposal.session_id::text AS session_id,
+               proposal.base_commit_sha, proposal.status, proposal.summary,
+               proposal.proposal, proposal.source_files, proposal.validation_status,
+               proposal.validation_report, proposal.reviewed_at,
+               proposal.created_at, proposal.updated_at,
+               rs.source_commit_sha, apps.latest_commit_sha, apps.repository_url
+        FROM remix_patch_proposals AS proposal
+        JOIN remix_sessions AS rs ON rs.id = proposal.session_id
+        JOIN apps ON apps.id = rs.app_id
+        WHERE proposal.id = CAST(:proposal_id AS uuid)
+          AND proposal.session_id = CAST(:session_id AS uuid)
+          AND rs.owner_id = CAST(:owner_id AS uuid)
+    """), {
+        "proposal_id": str(proposal_id), "session_id": str(remix_id),
+        "owner_id": user["id"],
+    })
+    row = result.mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Patch proposal not found")
+    if row["status"] != "proposed":
+        raise HTTPException(status_code=409, detail="Only pending proposals can be validated")
+    if row["source_commit_sha"] != row["base_commit_sha"] or row["latest_commit_sha"] != row["base_commit_sha"]:
+        raise HTTPException(status_code=409, detail="Repository changed; this proposal is pinned to an outdated revision")
+    try:
+        complete_sources = await fetch_repository_files_at_commit(
+            row["repository_url"], row["base_commit_sha"], row["source_files"],
+        )
+        report = validate_patch_against_sources(row["proposal"], complete_sources)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Pinned source could not be retrieved from GitHub") from exc
+    except (ValueError, KeyError, TypeError) as exc:
+        report = {
+            "status": "invalid",
+            "files": [],
+            "message": str(exc)[:1_000],
+        }
+    updated = await session.execute(text("""
+        UPDATE remix_patch_proposals
+        SET validation_status = :validation_status,
+            validation_report = CAST(:validation_report AS jsonb),
+            updated_at = now()
+        WHERE id = CAST(:proposal_id AS uuid)
+          AND session_id = CAST(:session_id AS uuid)
+          AND status = 'proposed'
+        RETURNING id::text AS id, session_id::text AS session_id, base_commit_sha,
+                  status, summary, proposal, source_files, validation_status,
+                  validation_report, reviewed_at, created_at, updated_at
+    """), {
+        "validation_status": report["status"],
+        "validation_report": json.dumps(report),
+        "proposal_id": str(proposal_id),
+        "session_id": str(remix_id),
+    })
+    saved = updated.mappings().first()
+    if saved is None:
+        raise HTTPException(status_code=409, detail="Proposal changed while validation was running")
+    await session.commit()
+    return RemixPatchProposalResponse(**dict(saved))
 
 
 @router.get("/remixes/{remix_id}/proposals", response_model=list[RemixPatchProposalResponse], tags=["remix"])
