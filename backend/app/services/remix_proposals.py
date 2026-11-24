@@ -79,3 +79,91 @@ async def generate_patch_proposal(*, request: str, files: list[dict]) -> dict:
         prompt=prompt,
     )
     return validate_proposal(raw, files)
+
+
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@(?: .*)?$")
+
+
+def apply_unified_diff_to_text(source: str, diff: str, path: str) -> str:
+    """Apply a single-file unified diff in memory, requiring exact source context."""
+    lines = diff.splitlines(keepends=True)
+    if len(lines) < 3 or lines[0].rstrip("\\r\\n") != f"--- a/{path}" or lines[1].rstrip("\\r\\n") != f"+++ b/{path}":
+        raise ValueError("Diff headers do not match the pinned source path")
+    source_lines = source.splitlines(keepends=True)
+    output = []
+    source_cursor = 0
+    index = 2
+    hunk_count = 0
+
+    def content_line(line: str) -> str:
+        return line.rstrip("\\r\\n")
+
+    while index < len(lines):
+        match = _HUNK_HEADER_RE.fullmatch(content_line(lines[index]))
+        if match is None:
+            raise ValueError("Unified diff contains an unsupported or malformed hunk")
+        old_start = int(match.group(1))
+        old_count = int(match.group(2) or 1)
+        new_count = int(match.group(4) or 1)
+        hunk_source_start = old_start if old_count == 0 else old_start - 1
+        if hunk_source_start < source_cursor or hunk_source_start > len(source_lines):
+            raise ValueError("Diff hunk starts outside the pinned source")
+        output.extend(source_lines[source_cursor:hunk_source_start])
+        source_cursor = hunk_source_start
+        consumed_old = 0
+        produced_new = 0
+        index += 1
+        while index < len(lines) and not content_line(lines[index]).startswith("@@ "):
+            row = lines[index]
+            if content_line(row).startswith("\\ No newline at end of file"):
+                raise ValueError("Diffs with no-newline markers are not supported")
+            if not row or row[0] not in {" ", "+", "-"}:
+                raise ValueError("Unified diff contains an unsupported line")
+            marker, payload = row[0], row[1:]
+            if marker in {" ", "-"}:
+                if source_cursor >= len(source_lines):
+                    raise ValueError("Diff consumes beyond the pinned source")
+                original = source_lines[source_cursor]
+                if content_line(original) != content_line(payload):
+                    raise ValueError("Diff context does not match the pinned source")
+                source_cursor += 1
+                consumed_old += 1
+            if marker in {" ", "+"}:
+                output.append(original if marker == " " else payload)
+                produced_new += 1
+            index += 1
+            if consumed_old > old_count or produced_new > new_count:
+                raise ValueError("Diff hunk line counts do not match its header")
+        if consumed_old != old_count or produced_new != new_count:
+            raise ValueError("Diff hunk is incomplete or has incorrect line counts")
+        hunk_count += 1
+    if hunk_count == 0:
+        raise ValueError("Diff contains no applicable hunks")
+    output.extend(source_lines[source_cursor:])
+    return "".join(output)
+
+
+def validate_patch_against_sources(proposal: dict, source_files: dict[str, dict]) -> dict:
+    """Verify and apply every proposal diff in memory against complete pinned blobs."""
+    import hashlib
+
+    validated = []
+    for item in proposal["files"]:
+        path = item["path"]
+        source = source_files.get(path)
+        if source is None:
+            raise ValueError(f"Complete pinned source is missing: {path}")
+        updated = apply_unified_diff_to_text(source["content"], item["diff"], path)
+        result_bytes = updated.encode("utf-8")
+        validated.append({
+            "path": path,
+            "source_blob_sha": source["content_sha"],
+            "source_bytes": source["size"],
+            "result_sha256": hashlib.sha256(result_bytes).hexdigest(),
+            "result_bytes": len(result_bytes),
+        })
+    return {
+        "status": "applicable",
+        "files": validated,
+        "message": "All diffs matched complete source blobs at the pinned commit. No files were written or executed.",
+    }
