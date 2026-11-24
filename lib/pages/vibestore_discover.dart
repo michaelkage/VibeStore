@@ -758,6 +758,32 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                       context,
                                     ).textTheme.bodySmall,
                                   ),
+                                  if (((proposal['proposal'] as Map?)?['risks']
+                                          as List? ??
+                                      const []).isNotEmpty) ...[
+                                    Text(
+                                      'Risks',
+                                      style: Theme.of(context).textTheme.labelLarge,
+                                    ),
+                                    for (final risk
+                                        in ((proposal['proposal'] as Map?)?['risks']
+                                                as List? ??
+                                            const []))
+                                      Text('• $risk'),
+                                  ],
+                                  if (((proposal['proposal'] as Map?)?['validation_steps']
+                                          as List? ??
+                                      const []).isNotEmpty) ...[
+                                    Text(
+                                      'Validation steps',
+                                      style: Theme.of(context).textTheme.labelLarge,
+                                    ),
+                                    for (final step
+                                        in ((proposal['proposal'] as Map?)?['validation_steps']
+                                                as List? ??
+                                            const []))
+                                      Text('• $step'),
+                                  ],
                                   for (final file
                                       in ((proposal['proposal']
                                                   as Map?)?['files']
