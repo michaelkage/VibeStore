@@ -286,27 +286,27 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     });
   });
 
-  Future<void> _reviewPatchProposal(
-    String proposalId,
-    String decision,
-  ) => _run(() async {
-    final active = _activeRemix;
-    if (active == null) return;
-    await _api!.configureBaseUrl(_baseUrlController.text);
-    await _api!.reviewRemixPatchProposal(
-      active['id'].toString(),
-      proposalId,
-      decision,
-    );
-    final proposals = await _api!.remixPatchProposals(active['id'].toString());
-    if (!mounted) return;
-    setState(() {
-      _remixProposals = proposals;
-      _notice = decision == 'approved'
-          ? 'Proposal marked approved for review. No files were modified.'
-          : 'Proposal rejected. No files were modified.';
-    });
-  });
+  Future<void> _reviewPatchProposal(String proposalId, String decision) =>
+      _run(() async {
+        final active = _activeRemix;
+        if (active == null) return;
+        await _api!.configureBaseUrl(_baseUrlController.text);
+        await _api!.reviewRemixPatchProposal(
+          active['id'].toString(),
+          proposalId,
+          decision,
+        );
+        final proposals = await _api!.remixPatchProposals(
+          active['id'].toString(),
+        );
+        if (!mounted) return;
+        setState(() {
+          _remixProposals = proposals;
+          _notice = decision == 'approved'
+              ? 'Proposal marked approved for review. No files were modified.'
+              : 'Proposal rejected. No files were modified.';
+        });
+      });
 
   Future<void> _removeSubmission(String appId, String name) => _run(() async {
     await _api!.removeMyRepository(appId);
@@ -693,16 +693,22 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       const Divider(height: 24),
                       Row(
                         children: [
-                          const Expanded(child: Text('Reviewable patch drafts')),
+                          const Expanded(
+                            child: Text('Reviewable patch drafts'),
+                          ),
                           IconButton(
                             tooltip: 'Refresh patch proposals',
                             onPressed: _busy
                                 ? null
                                 : () => _run(() async {
                                     final proposals = await _api!
-                                        .remixPatchProposals(active['id'].toString());
+                                        .remixPatchProposals(
+                                          active['id'].toString(),
+                                        );
                                     if (mounted) {
-                                      setState(() => _remixProposals = proposals);
+                                      setState(
+                                        () => _remixProposals = proposals,
+                                      );
                                     }
                                   }),
                             icon: const Icon(Icons.refresh_rounded),
@@ -710,7 +716,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         ],
                       ),
                       if (_remixProposals.isEmpty)
-                        const Text('No patch drafts yet. Generate one after describing a change.')
+                        const Text(
+                          'No patch drafts yet. Generate one after describing a change.',
+                        )
                       else
                         for (final proposal in _remixProposals) ...[
                           Card(
@@ -723,30 +731,52 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          proposal['summary']?.toString() ?? 'Patch proposal',
-                                          style: Theme.of(context).textTheme.titleSmall,
+                                          proposal['summary']?.toString() ??
+                                              'Patch proposal',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleSmall,
                                         ),
                                       ),
-                                      Chip(label: Text(proposal['status']?.toString() ?? 'proposed')),
+                                      Chip(
+                                        label: Text(
+                                          proposal['status']?.toString() ??
+                                              'proposed',
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   Text(
                                     'Base commit: ${proposal['base_commit_sha'] ?? 'unknown'}',
-                                    style: Theme.of(context).textTheme.bodySmall,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
                                   ),
                                   Text(
                                     'Review only · ${proposal['validation_status'] ?? 'review_only'} · approval never applies changes',
                                     style: Theme.of(context).textTheme.bodySmall,
                                   ),
-                                  for (final file in ((proposal['proposal'] as Map?)?['files'] as List? ?? const []))
+                                  for (final file
+                                      in ((proposal['proposal']
+                                                  as Map?)?['files']
+                                              as List? ??
+                                          const []))
                                     ExpansionTile(
                                       tilePadding: EdgeInsets.zero,
-                                      title: Text(file['path']?.toString() ?? 'Source file'),
-                                      subtitle: Text(file['rationale']?.toString() ?? ''),
+                                      title: Text(
+                                        file['path']?.toString() ??
+                                            'Source file',
+                                      ),
+                                      subtitle: Text(
+                                        file['rationale']?.toString() ?? '',
+                                      ),
                                       children: [
                                         SelectableText(
                                           file['diff']?.toString() ?? '',
-                                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                                          style: const TextStyle(
+                                            fontFamily: 'monospace',
+                                            fontSize: 12,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -761,8 +791,12 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                                   proposal['id'].toString(),
                                                   'approved',
                                                 ),
-                                          icon: const Icon(Icons.check_circle_outline),
-                                          label: const Text('Approve for review'),
+                                          icon: const Icon(
+                                            Icons.check_circle_outline,
+                                          ),
+                                          label: const Text(
+                                            'Approve for review',
+                                          ),
                                         ),
                                         TextButton.icon(
                                           onPressed: _busy
@@ -771,7 +805,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                                   proposal['id'].toString(),
                                                   'rejected',
                                                 ),
-                                          icon: const Icon(Icons.cancel_outlined),
+                                          icon: const Icon(
+                                            Icons.cancel_outlined,
+                                          ),
                                           label: const Text('Reject'),
                                         ),
                                       ],
