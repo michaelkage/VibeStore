@@ -45,7 +45,12 @@ from app.schemas import (
     RemixPatchProposalResponse,
 )
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
-from app.services.github import (\n    fetch_repository_files, fetch_repository_files_at_commit,\n    fetch_repository_snapshot, parse_github_url,\n)
+from app.services.github import (
+    fetch_repository_files,
+    fetch_repository_files_at_commit,
+    fetch_repository_snapshot,
+    parse_github_url,
+)
 from app.services.manifest import inspect_manifest
 from app.services.remix import generate_change_plan
 from app.services.remix_proposals import generate_patch_proposal, validate_patch_against_sources
