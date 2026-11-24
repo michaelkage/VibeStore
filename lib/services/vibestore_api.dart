@@ -239,7 +239,9 @@ class VibeStoreApi {
   Future<Map<String, dynamic>> remixSession(String remixId) async {
     final response = await _get('remixes/$remixId');
     if (response is! Map<String, dynamic>) {
-      throw const VibeStoreApiException('The remix session response was invalid.');
+      throw const VibeStoreApiException(
+        'The remix session response was invalid.',
+      );
     }
     return response;
   }
@@ -247,11 +249,9 @@ class VibeStoreApi {
   Future<Map<String, dynamic>> sendRemixMessage(
     String remixId,
     String content,
-  ) => _post(
-    'remixes/$remixId/messages',
-    {'content': content.trim()},
-    timeout: const Duration(seconds: 110),
-  );
+  ) => _post('remixes/$remixId/messages', {
+    'content': content.trim(),
+  }, timeout: const Duration(seconds: 110));
 
   Future<dynamic> _get(String path) async {
     if (_baseUrl.isEmpty) {
