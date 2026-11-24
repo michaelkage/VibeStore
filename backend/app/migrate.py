@@ -26,7 +26,7 @@ async def apply_migrations() -> list[str]:
     if not files:
         raise RuntimeError(f"No SQL migrations found in {migration_dir}")
     for path in files:
-_MIGRATION_NAME = re.compile(r"^[0-9]{3}_[a-z0-9_]+\.sql$")
+        if not _MIGRATION_NAME.fullmatch(path.name):
             raise RuntimeError(f"Invalid migration filename: {path.name}")
 
     connection = await asyncpg.connect(_database_dsn())
