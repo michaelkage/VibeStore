@@ -268,11 +268,9 @@ class VibeStoreApi {
   Future<Map<String, dynamic>> generateRemixPatchProposal(
     String remixId,
     String content,
-  ) => _post(
-    'remixes/$remixId/proposals',
-    {'content': content.trim()},
-    timeout: const Duration(seconds: 110),
-  );
+  ) => _post('remixes/$remixId/proposals', {
+    'content': content.trim(),
+  }, timeout: const Duration(seconds: 110));
 
   Future<Map<String, dynamic>> reviewRemixPatchProposal(
     String remixId,
