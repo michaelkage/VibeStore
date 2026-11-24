@@ -1,7 +1,5 @@
 import json
 
-import httpx
-
 from app.ai.openai_compatible import get_ai_provider
 
 MAX_CONTEXT_FILES = 12
