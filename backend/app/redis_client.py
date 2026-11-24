@@ -47,3 +47,16 @@ async def redis_is_healthy() -> bool:
         return bool(await _client.ping())
     except RedisError:
         return False
+
+
+async def enforce_remix_rate_limit(user_id: str) -> None:
+    """Limit expensive AI planning calls to 30 per account per rolling hour."""
+    if _client is None:
+        raise HTTPException(status_code=503, detail="AI request rate limiter is unavailable")
+    key = f"vibestore:remix-rate:{user_id}"
+    try:
+        count = int(await _client.eval(_RATE_LIMIT_SCRIPT, 1, key, 3600))
+    except RedisError as exc:
+        raise HTTPException(status_code=503, detail="AI request rate limiter is unavailable") from exc
+    if count > 30:
+        raise HTTPException(status_code=429, detail="Remix planning limit reached; retry in an hour")
