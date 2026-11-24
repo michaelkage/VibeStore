@@ -791,6 +791,7 @@ async def add_remix_message(
         """),
         {"app_id": remix["app_id"]},
     )).mappings()
+    file_rows = [dict(item) for item in files]
     # Recheck after reading the snapshot to close the catalog-refresh race window.
     current = await session.execute(
         text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),
@@ -801,7 +802,7 @@ async def add_remix_message(
     try:
         plan = await generate_change_plan(
             request=payload.content,
-            files=[dict(item) for item in files],
+            files=file_rows,
             history=[dict(item) for item in reversed(list(history))],
         )
     except RuntimeError as exc:
@@ -811,7 +812,7 @@ async def add_remix_message(
     plan = plan.strip()[:12_000]
     if not plan:
         raise HTTPException(status_code=503, detail="Remix planner returned an empty response")
-    evidence = [{"path": item["path"]} for item in files]
+    evidence = [{"path": item["path"]} for item in file_rows]
     response = await session.execute(
         text("""
             INSERT INTO remix_messages (session_id, role, content, message_type, evidence)
