@@ -40,6 +40,9 @@ from app.schemas import (
     RemixMessageCreateRequest,
     RemixSessionResponse,
     RemixMessageResponse,
+    RemixPatchProposalCreateRequest,
+    RemixPatchProposalReviewRequest,
+    RemixPatchProposalResponse,
 )
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
 from app.services.github import fetch_repository_files, fetch_repository_snapshot, parse_github_url
