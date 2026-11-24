@@ -36,3 +36,14 @@ async def test_remix_rate_limit_rejects_excessive_requests(monkeypatch):
     with pytest.raises(HTTPException) as error:
         await redis_client.enforce_remix_rate_limit("user-123")
     assert error.value.status_code == 429
+
+
+async def test_remix_rate_limit_fails_closed_when_redis_is_unavailable(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app import redis_client
+
+    monkeypatch.setattr(redis_client, "_client", None)
+    with pytest.raises(HTTPException) as error:
+        await redis_client.enforce_remix_rate_limit("user-123")
+    assert error.value.status_code == 503
