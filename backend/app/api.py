@@ -21,7 +21,7 @@ from app.auth import (
 )
 from app.config import get_settings
 from app.db import get_session
-from app.redis_client import enforce_auth_rate_limit
+from app.redis_client import enforce_auth_rate_limit, enforce_remix_rate_limit
 from app.queue import enqueue_repository_index
 from app.schemas import (
     InspectionResponse,
@@ -755,6 +755,7 @@ async def add_remix_message(
         raise HTTPException(status_code=404, detail="Active remix session not found")
     if remix["latest_commit_sha"] != remix["source_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session to use the latest source snapshot")
+    await enforce_remix_rate_limit(user["id"])
     message_id = str(uuid4())
     await session.execute(
         text("""
