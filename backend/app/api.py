@@ -36,10 +36,15 @@ from app.schemas import (
     SearchResult,
     TokenResponse,
     UserResponse,
+    RemixSessionCreateRequest,
+    RemixMessageCreateRequest,
+    RemixSessionResponse,
+    RemixMessageResponse,
 )
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
 from app.services.github import fetch_repository_files, fetch_repository_snapshot, parse_github_url
 from app.services.manifest import inspect_manifest
+from app.services.remix import generate_change_plan
 
 router = APIRouter()
 
@@ -642,3 +647,175 @@ async def inspect_repository(payload: RepositoryRequest):
             "Runtime behavior, dynamic code loading and full architecture analysis are not assessed.",
         ],
     )
+
+
+@router.post("/remixes", response_model=RemixSessionResponse, status_code=status.HTTP_201_CREATED, tags=["remix"])
+async def create_remix_session(
+    payload: RemixSessionCreateRequest,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        text("""
+            SELECT id::text AS app_id, name AS app_name, repository_url, latest_commit_sha
+            FROM apps WHERE id = CAST(:app_id AS uuid) AND latest_commit_sha IS NOT NULL
+        """),
+        {"app_id": payload.app_id},
+    )
+    app = result.mappings().first()
+    if app is None:
+        raise HTTPException(status_code=404, detail="Indexed app with a source commit not found")
+    created = await session.execute(
+        text("""
+            INSERT INTO remix_sessions (owner_id, app_id, source_commit_sha, title)
+            VALUES (CAST(:owner_id AS uuid), CAST(:app_id AS uuid), :commit_sha, :title)
+            RETURNING id::text AS id, status, title, created_at, updated_at
+        """),
+        {
+            "owner_id": user["id"], "app_id": payload.app_id,
+            "commit_sha": app["latest_commit_sha"], "title": payload.title.strip(),
+        },
+    )
+    row = dict(created.mappings().one())
+    await session.commit()
+    return RemixSessionResponse(
+        **row, app_id=app["app_id"], app_name=app["app_name"],
+        repository_url=app["repository_url"], source_commit_sha=app["latest_commit_sha"],
+    )
+
+
+@router.get("/remixes", response_model=list[RemixSessionResponse], tags=["remix"])
+async def list_remix_sessions(
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (await session.execute(
+        text("""
+            SELECT rs.id::text AS id, rs.app_id::text AS app_id, apps.name AS app_name,
+                   apps.repository_url, rs.source_commit_sha, rs.title, rs.status,
+                   rs.created_at, rs.updated_at
+            FROM remix_sessions rs JOIN apps ON apps.id = rs.app_id
+            WHERE rs.owner_id = CAST(:owner_id AS uuid)
+            ORDER BY rs.updated_at DESC LIMIT 100
+        """),
+        {"owner_id": user["id"]},
+    )).mappings()
+    return [RemixSessionResponse(**dict(row)) for row in rows]
+
+
+@router.get("/remixes/{remix_id}", response_model=RemixSessionResponse, tags=["remix"])
+async def get_remix_session(
+    remix_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        text("""
+            SELECT rs.id::text AS id, rs.app_id::text AS app_id, apps.name AS app_name,
+                   apps.repository_url, rs.source_commit_sha, rs.title, rs.status,
+                   rs.created_at, rs.updated_at
+            FROM remix_sessions rs JOIN apps ON apps.id = rs.app_id
+            WHERE rs.id = CAST(:id AS uuid) AND rs.owner_id = CAST(:owner_id AS uuid)
+        """),
+        {"id": str(remix_id), "owner_id": user["id"]},
+    )
+    row = result.mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Remix session not found")
+    messages = (await session.execute(
+        text("""
+            SELECT id::text AS id, role, content, message_type, evidence, created_at
+            FROM remix_messages WHERE session_id = CAST(:id AS uuid)
+            ORDER BY created_at ASC LIMIT 200
+        """),
+        {"id": str(remix_id)},
+    )).mappings()
+    return RemixSessionResponse(**dict(row), messages=[RemixMessageResponse(**dict(m)) for m in messages])
+
+
+@router.post("/remixes/{remix_id}/messages", response_model=RemixMessageResponse, status_code=status.HTTP_201_CREATED, tags=["remix"])
+async def add_remix_message(
+    remix_id: UUID,
+    payload: RemixMessageCreateRequest,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    owned = await session.execute(
+        text("""
+            SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha
+            FROM remix_sessions rs
+            WHERE rs.id = CAST(:id AS uuid) AND rs.owner_id = CAST(:owner_id AS uuid)
+              AND rs.status = 'planning'
+        """),
+        {"id": str(remix_id), "owner_id": user["id"]},
+    )
+    remix = owned.mappings().first()
+    if remix is None:
+        raise HTTPException(status_code=404, detail="Active remix session not found")
+    message_id = str(uuid4())
+    inserted = await session.execute(
+        text("""
+            INSERT INTO remix_messages (id, session_id, role, content, message_type)
+            VALUES (CAST(:id AS uuid), CAST(:session_id AS uuid), 'user', :content, 'text')
+            RETURNING id::text AS id, role, content, message_type, evidence, created_at
+        """),
+        {"id": message_id, "session_id": str(remix_id), "content": payload.content.strip()},
+    )
+    await session.execute(
+        text("UPDATE remix_sessions SET updated_at = now() WHERE id = CAST(:id AS uuid)"),
+        {"id": str(remix_id)},
+    )
+    await session.commit()
+
+    history = (await session.execute(
+        text("""
+            SELECT role, content FROM remix_messages
+            WHERE session_id = CAST(:id AS uuid)
+            ORDER BY created_at DESC LIMIT 12
+        """),
+        {"id": str(remix_id)},
+    )).mappings()
+    files = (await session.execute(
+        text("""
+            SELECT path, content_excerpt FROM repository_files
+            WHERE app_id = CAST(:app_id AS uuid)
+            ORDER BY CASE
+                WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
+                WHEN lower(path) LIKE '%build.gradle%' THEN 1
+                WHEN lower(path) LIKE '%readme%' THEN 2
+                ELSE 3 END, path
+            LIMIT 12
+        """),
+        {"app_id": remix["app_id"]},
+    )).mappings()
+    try:
+        plan = await generate_change_plan(
+            request=payload.content,
+            files=[dict(item) for item in files],
+            history=[dict(item) for item in reversed(list(history))],
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Remix planning AI provider is not configured") from exc
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(status_code=503, detail="Remix planning is temporarily unavailable") from exc
+    plan = plan.strip()[:12_000]
+    if not plan:
+        raise HTTPException(status_code=503, detail="Remix planner returned an empty response")
+    evidence = [{"path": item["path"]} for item in files]
+    response = await session.execute(
+        text("""
+            INSERT INTO remix_messages (session_id, role, content, message_type, evidence)
+            VALUES (CAST(:session_id AS uuid), 'assistant', :content, 'change_plan', CAST(:evidence AS jsonb))
+            RETURNING id::text AS id, role, content, message_type, evidence, created_at
+        """),
+        {
+            "session_id": str(remix_id), "content": plan,
+            "evidence": json.dumps(evidence),
+        },
+    )
+    await session.execute(
+        text("UPDATE remix_sessions SET updated_at = now() WHERE id = CAST(:id AS uuid)"),
+        {"id": str(remix_id)},
+    )
+    await session.commit()
+    return RemixMessageResponse(**dict(response.mappings().one()))
