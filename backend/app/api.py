@@ -890,7 +890,7 @@ async def create_remix_patch_proposal(
         INSERT INTO remix_patch_proposals (session_id, base_commit_sha, summary, proposal, source_files)
         VALUES (CAST(:session_id AS uuid), :commit_sha, :summary, CAST(:proposal AS jsonb), CAST(:source_files AS jsonb))
         RETURNING id::text AS id, session_id::text AS session_id, base_commit_sha, status, summary,
-                  proposal, source_files, validation_status, reviewed_at, created_at, updated_at
+                  proposal, source_files, validation_status, validation_report, reviewed_at, created_at, updated_at
     """), {"session_id": str(remix_id), "commit_sha": remix["source_commit_sha"],
            "summary": proposal["summary"], "proposal": json.dumps(proposal), "source_files": json.dumps(source_files)})
     await session.commit()
@@ -999,6 +999,7 @@ async def review_remix_patch_proposal(
         WHERE proposal.id = CAST(:proposal_id AS uuid)
           AND proposal.session_id = CAST(:session_id AS uuid)
           AND proposal.status = 'proposed'
+          AND proposal.validation_status = 'applicable'
           AND EXISTS (
               SELECT 1 FROM remix_sessions AS rs
               JOIN apps ON apps.id = rs.app_id
@@ -1010,7 +1011,7 @@ async def review_remix_patch_proposal(
         RETURNING proposal.id::text AS id, proposal.session_id::text AS session_id,
                   proposal.base_commit_sha, proposal.status, proposal.summary,
                   proposal.proposal, proposal.source_files, proposal.validation_status,
-                  proposal.reviewed_at, proposal.created_at, proposal.updated_at
+                  proposal.validation_report, proposal.reviewed_at, proposal.created_at, proposal.updated_at
     """), {
         "decision": payload.decision, "proposal_id": str(proposal_id),
         "session_id": str(remix_id), "owner_id": user["id"],
