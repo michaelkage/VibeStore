@@ -286,15 +286,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     });
   });
 
-
   Future<void> _validatePatchProposal(String proposalId) => _run(() async {
     final active = _activeRemix;
     if (active == null) return;
     await _api!.configureBaseUrl(_baseUrlController.text);
-    await _api!.validateRemixPatchProposal(
-      active['id'].toString(),
-      proposalId,
-    );
+    await _api!.validateRemixPatchProposal(active['id'].toString(), proposalId);
     final proposals = await _api!.remixPatchProposals(active['id'].toString());
     if (!mounted) return;
     final validated = proposals.firstWhere(
@@ -782,18 +778,25 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                     ).textTheme.bodySmall,
                                   ),
 
-                                  if ((proposal['validation_report'] as Map?)?['message'] != null) ...[
+                                  if ((proposal['validation_report']
+                                          as Map?)?['message'] !=
+                                      null) ...[
                                     Text(
                                       'Validation: ${(proposal['validation_report'] as Map)['message']}',
-                                      style: Theme.of(context).textTheme.bodySmall,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
                                     ),
                                     for (final verified
-                                        in ((proposal['validation_report'] as Map?)?['files']
+                                        in ((proposal['validation_report']
+                                                    as Map?)?['files']
                                                 as List? ??
                                             const []))
                                       Text(
                                         'Verified ${verified['path']} · result SHA-256 ${verified['result_sha256']}',
-                                        style: Theme.of(context).textTheme.bodySmall,
+                                        style: Theme.of(
+                                          context,
+                                        ).textTheme.bodySmall,
                                       ),
                                   ],
                                   if (((proposal['proposal'] as Map?)?['risks']
