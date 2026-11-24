@@ -754,7 +754,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                   ),
                                   Text(
                                     'Review only · ${proposal['validation_status'] ?? 'review_only'} · approval never applies changes',
-                                    style: Theme.of(context).textTheme.bodySmall,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
                                   ),
                                   for (final file
                                       in ((proposal['proposal']
