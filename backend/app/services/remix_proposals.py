@@ -81,13 +81,18 @@ async def generate_patch_proposal(*, request: str, files: list[dict]) -> dict:
     return validate_proposal(raw, files)
 
 
-_HUNK_HEADER_RE = re.compile(r"^@@ -(\\d+)(?:,(\\d+))? \\+(\\d+)(?:,(\\d+))? @@(?: .*)?$")
+
+_HUNK_HEADER_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
 
 
 def apply_unified_diff_to_text(source: str, diff: str, path: str) -> str:
     """Apply a single-file unified diff in memory, requiring exact source context."""
     lines = diff.splitlines(keepends=True)
-    if len(lines) < 3 or lines[0].rstrip("\\r\\n") != f"--- a/{path}" or lines[1].rstrip("\\r\\n") != f"+++ b/{path}":
+    if (
+        len(lines) < 3
+        or lines[0].rstrip("\r\n") != f"--- a/{path}"
+        or lines[1].rstrip("\r\n") != f"+++ b/{path}"
+    ):
         raise ValueError("Diff headers do not match the pinned source path")
     source_lines = source.splitlines(keepends=True)
     output = []
@@ -96,7 +101,7 @@ def apply_unified_diff_to_text(source: str, diff: str, path: str) -> str:
     hunk_count = 0
 
     def content_line(line: str) -> str:
-        return line.rstrip("\\r\\n")
+        return line.rstrip("\r\n")
 
     while index < len(lines):
         match = _HUNK_HEADER_RE.fullmatch(content_line(lines[index]))
