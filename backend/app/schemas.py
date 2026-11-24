@@ -169,6 +169,7 @@ class RemixPatchProposalResponse(BaseModel):
     proposal: dict
     source_files: list[dict]
     validation_status: str
+    validation_report: dict = Field(default_factory=dict)
     reviewed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
