@@ -25,7 +25,7 @@ _MAX_FILES = 6
 
 def _git_blob_sha(content: bytes) -> str:
     return hashlib.sha1(
-        b"blob " + str(len(content)).encode() + b"\\0" + content,
+        b"blob " + str(len(content)).encode() + b"\0" + content,
         usedforsecurity=False,
     ).hexdigest()
 
@@ -35,7 +35,7 @@ def _safe_relative_path(value: str) -> PurePosixPath:
     if (
         not value or len(value) > 240 or path.is_absolute()
         or any(part in {"", ".", ".."} for part in value.split("/"))
-        or "\\" in value or "\\0" in value
+        or "\\" in value or "\0" in value
     ):
         raise ValueError("Unsafe patch path")
     return path
@@ -200,6 +200,11 @@ async def reconcile_patch_jobs(ctx):
     from arq import create_pool
 
     async with SessionLocal() as session:
+        await session.execute(text("""
+            UPDATE remix_patch_artifacts SET status = 'queued', updated_at = now()
+            WHERE status = 'running' AND updated_at < now() - interval '10 minutes'
+        """))
+        await session.commit()
         rows = (await session.execute(text("""
             SELECT id::text AS id FROM remix_patch_artifacts
             WHERE status = 'queued' ORDER BY created_at LIMIT 50
