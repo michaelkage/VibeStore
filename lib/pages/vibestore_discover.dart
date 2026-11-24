@@ -905,8 +905,6 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                       ],
                                     ),
                                 ],
-                                    ),
-                                ],
                               ),
                             ),
                           ),
