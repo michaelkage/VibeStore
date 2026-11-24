@@ -21,6 +21,7 @@ docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_reposi
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
 docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql\ndocker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
+docker compose exec -T db psql -U vibestore -d vibestore < migrations/008_remix_sessions.sql
 ```
 
 OpenAPI: http://localhost:8000/docs  
@@ -39,7 +40,7 @@ Health: http://localhost:8000/health
 - `GET /api/v1/repositories/mine`: list only the authenticated user's repository submissions.
 - `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
-- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.\n- `GET /api/v1/apps/{app_id}/inspection`: return the latest cached inspection report for an indexed catalog app, including the source commit SHA.
+- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.\n- `GET /api/v1/apps/{app_id}/inspection`: return the latest cached inspection report for an indexed catalog app, including the source commit SHA.\n- `POST /api/v1/remixes`: create an owner-scoped remix planning session pinned to the app's current indexed commit.\n- `GET /api/v1/remixes`: list the authenticated user's remix sessions.\n- `GET /api/v1/remixes/{remix_id}`: read an owned session and its conversation.\n- `POST /api/v1/remixes/{remix_id}/messages`: save a prompt and generate an evidence-bounded change plan; requires a configured AI provider.
 
 ## Authentication security
 
@@ -81,3 +82,12 @@ Repository files are fetched as data and never executed. The indexing endpoint a
 Comprehensive X-Ray analysis, remix agent/orchestration, isolated Gradle workers, isolated APK signing, artifact storage/delivery, notifications and richer catalog/discovery UX remain outstanding. The remix table is groundwork only: no arbitrary repository code is built or signed by this API.
 
 Production deployments must replace Compose credentials, use TLS, restrict CORS, protect secrets, configure backups and observability, and keep builds in disposable network-restricted sandboxes. Signing keys must remain outside both the API and build workers.
+
+
+## Fork & Vibe: remix planning foundation
+
+Migration `008_remix_sessions.sql` adds owner-scoped remix sessions and conversation messages. A session records the app's current indexed commit SHA at creation. Planning requests are rejected with HTTP 409 if the catalog has since advanced, preventing a conversation pinned to an older revision from silently using newer indexed files. Session reads and writes are scoped to the authenticated owner.
+
+The first implementation is deliberately a **planning-only** slice. A configured provider receives the latest bounded conversation and at most 12 indexed file excerpts (up to 6,000 characters each), selected with Android manifests and Gradle files prioritized. The prompt treats repository content as untrusted evidence and asks for a Markdown plan with affected paths, steps, risks and validation. Assistant messages store the evidence file paths used. Prompt and response sizes are bounded.
+
+No source files are modified. No repository code, Gradle task, shell command or APK is executed. There is no cloud build, signing-key handling, artifact storage or delivery in this slice. Those capabilities require a separate disposable, network-restricted build environment and isolated signing service; they must not be added to the API process.
