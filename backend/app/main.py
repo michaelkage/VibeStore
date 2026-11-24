@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import router
+from app.patch_processing import router as patch_processing_router
 from app.config import get_settings
 from app.db import SessionLocal, dispose_engine
 from app.redis_client import close_redis, init_redis, redis_is_healthy
@@ -33,6 +34,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(router, prefix=settings.api_v1_prefix)
+app.include_router(patch_processing_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", response_model=HealthResponse, tags=["operations"])
