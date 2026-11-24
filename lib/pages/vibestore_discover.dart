@@ -27,6 +27,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   List<Map<String, dynamic>> _results = [];
   List<Map<String, dynamic>> _submissions = [];
   List<Map<String, dynamic>> _remixSessions = [];
+  List<Map<String, dynamic>> _remixProposals = [];
   Map<String, dynamic>? _activeRemix;
   String? _inspection;
   String? _notice;
@@ -227,6 +228,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     setState(() {
       _activeRemix = session;
       _remixSessions = sessions;
+      _remixProposals = [];
       _remixPromptController.clear();
       _notice =
           'Remix session created for $appName at commit ${session['source_commit_sha']}.';
@@ -239,6 +241,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     if (!mounted) return;
     setState(() {
       _activeRemix = session;
+      _remixProposals = await _api!.remixPatchProposals(remixId);
       _notice = 'Opened remix session: ${session['title']}.';
     });
   });
@@ -260,6 +263,47 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _remixPromptController.clear();
       _notice =
           'Change plan generated. Review the evidence and validation steps below.';
+    });
+  });
+
+  Future<void> _generatePatchProposal() => _run(() async {
+    final active = _activeRemix;
+    final prompt = _remixPromptController.text.trim();
+    if (active == null || prompt.length < 3) {
+      throw const VibeStoreApiException(
+        'Enter a change request with at least 3 characters.',
+      );
+    }
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    await _api!.generateRemixPatchProposal(active['id'].toString(), prompt);
+    final proposals = await _api!.remixPatchProposals(active['id'].toString());
+    if (!mounted) return;
+    setState(() {
+      _remixProposals = proposals;
+      _notice =
+          'Review-only patch draft generated. It has not changed any source files.';
+    });
+  });
+
+  Future<void> _reviewPatchProposal(
+    String proposalId,
+    String decision,
+  ) => _run(() async {
+    final active = _activeRemix;
+    if (active == null) return;
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    await _api!.reviewRemixPatchProposal(
+      active['id'].toString(),
+      proposalId,
+      decision,
+    );
+    final proposals = await _api!.remixPatchProposals(active['id'].toString());
+    if (!mounted) return;
+    setState(() {
+      _remixProposals = proposals;
+      _notice = decision == 'approved'
+          ? 'Proposal marked approved for review. No files were modified.'
+          : 'Proposal rejected. No files were modified.';
     });
   });
 
@@ -645,6 +689,97 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                             ],
                           ),
                         ),
+                      const Divider(height: 24),
+                      Row(
+                        children: [
+                          const Expanded(child: Text('Reviewable patch drafts')),
+                          IconButton(
+                            tooltip: 'Refresh patch proposals',
+                            onPressed: _busy
+                                ? null
+                                : () => _run(() async {
+                                    final proposals = await _api!
+                                        .remixPatchProposals(active['id'].toString());
+                                    if (mounted) {
+                                      setState(() => _remixProposals = proposals);
+                                    }
+                                  }),
+                            icon: const Icon(Icons.refresh_rounded),
+                          ),
+                        ],
+                      ),
+                      if (_remixProposals.isEmpty)
+                        const Text('No patch drafts yet. Generate one after describing a change.')
+                      else
+                        for (final proposal in _remixProposals) ...[
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          proposal['summary']?.toString() ?? 'Patch proposal',
+                                          style: Theme.of(context).textTheme.titleSmall,
+                                        ),
+                                      ),
+                                      Chip(label: Text(proposal['status']?.toString() ?? 'proposed')),
+                                    ],
+                                  ),
+                                  Text(
+                                    'Base commit: ${proposal['base_commit_sha'] ?? 'unknown'}',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                  Text(
+                                    'Review only · ${proposal['validation_status'] ?? 'review_only'} · approval never applies changes',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                  for (final file in ((proposal['proposal'] as Map?)?['files'] as List? ?? const []))
+                                    ExpansionTile(
+                                      tilePadding: EdgeInsets.zero,
+                                      title: Text(file['path']?.toString() ?? 'Source file'),
+                                      subtitle: Text(file['rationale']?.toString() ?? ''),
+                                      children: [
+                                        SelectableText(
+                                          file['diff']?.toString() ?? '',
+                                          style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  if (proposal['status'] == 'proposed')
+                                    Wrap(
+                                      spacing: 8,
+                                      children: [
+                                        OutlinedButton.icon(
+                                          onPressed: _busy
+                                              ? null
+                                              : () => _reviewPatchProposal(
+                                                  proposal['id'].toString(),
+                                                  'approved',
+                                                ),
+                                          icon: const Icon(Icons.check_circle_outline),
+                                          label: const Text('Approve for review'),
+                                        ),
+                                        TextButton.icon(
+                                          onPressed: _busy
+                                              ? null
+                                              : () => _reviewPatchProposal(
+                                                  proposal['id'].toString(),
+                                                  'rejected',
+                                                ),
+                                          icon: const Icon(Icons.cancel_outlined),
+                                          label: const Text('Reject'),
+                                        ),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
                       TextField(
                         controller: _remixPromptController,
                         minLines: 2,
@@ -657,10 +792,39 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                           border: OutlineInputBorder(),
                         ),
                       ),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: FilledButton.icon(
-                          onPressed: _busy ? null : _sendRemixMessage,
+                      Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _busy ? null : _generatePatchProposal,
+                            icon: const Icon(Icons.difference_outlined),
+                            label: const Text('Draft source diff'),
+                          ),
+                          FilledButton.icon(
+                            onPressed: _busy ? null : _sendRemixMessage,
+                            icon: const Icon(Icons.auto_awesome_rounded),
+                            label: const Text('Generate change plan'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Patch drafts are review-only. Approving records your decision; it does not edit files or run a build.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Planning only: no source files are edited and no code or APK is executed or built.',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                      /* legacy action replaced */ 
+                      if (false)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: FilledButton.icon(
+                            onPressed: _busy ? null : _sendRemixMessage,
                           icon: const Icon(Icons.auto_awesome_rounded),
                           label: const Text('Generate change plan'),
                         ),
