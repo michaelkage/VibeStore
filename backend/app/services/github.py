@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import re
 from urllib.parse import quote
 
@@ -131,15 +133,12 @@ async def fetch_repository_files(repository_url: str) -> dict[str, str]:
     return {item["path"]: item["content"] for item in snapshot["files"]}
 
 
-
 _MAX_PATCH_SOURCE_BYTES = 1_000_000
 _GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 def _git_blob_sha(content: bytes) -> str:
-    import hashlib
-
-    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\\0" + content).hexdigest()
+    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\0" + content).hexdigest()
 
 
 async def fetch_repository_files_at_commit(
@@ -189,7 +188,6 @@ async def fetch_repository_files_at_commit(
             blob = blob_response.json()
             if blob.get("sha") != expected_sha or blob.get("encoding") != "base64":
                 raise ValueError(f"GitHub returned an unexpected source blob: {path}")
-            import base64
             try:
                 content = base64.b64decode(blob.get("content", ""), validate=False)
             except (ValueError, TypeError) as exc:
