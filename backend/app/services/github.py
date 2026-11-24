@@ -129,3 +129,80 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
 async def fetch_repository_files(repository_url: str) -> dict[str, str]:
     snapshot = await fetch_repository_snapshot(repository_url)
     return {item["path"]: item["content"] for item in snapshot["files"]}
+
+
+
+_MAX_PATCH_SOURCE_BYTES = 1_000_000
+_GIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _git_blob_sha(content: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha1(b"blob " + str(len(content)).encode() + b"\\0" + content).hexdigest()
+
+
+async def fetch_repository_files_at_commit(
+    repository_url: str, commit_sha: str, expected_files: list[dict],
+) -> dict[str, dict]:
+    """Fetch complete, hash-verified file contents from one immutable Git commit."""
+    if not _GIT_SHA_RE.fullmatch(commit_sha):
+        raise ValueError("Pinned source commit SHA is invalid")
+    if not 1 <= len(expected_files) <= 6:
+        raise ValueError("Patch source file count is outside the supported range")
+    owner, repository = parse_github_url(repository_url)
+    settings = get_settings()
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if settings.github_token:
+        headers["Authorization"] = f"Bearer {settings.github_token}"
+
+    async with httpx.AsyncClient(timeout=25, follow_redirects=False) as client:
+        base = f"https://api.github.com/repos/{owner}/{repository}"
+        tree_response = await client.get(
+            f"{base}/git/trees/{commit_sha}?recursive=1", headers=headers,
+        )
+        tree_response.raise_for_status()
+        tree = tree_response.json()
+        if tree.get("truncated"):
+            raise ValueError("Pinned repository tree is truncated; source cannot be verified safely")
+        entries = {
+            entry["path"]: entry for entry in tree.get("tree", [])
+            if entry.get("type") == "blob"
+        }
+        result = {}
+        for item in expected_files:
+            path, expected_sha = item.get("path"), item.get("content_sha")
+            if not isinstance(path, str) or not _GIT_SHA_RE.fullmatch(str(expected_sha or "")):
+                raise ValueError("Stored source file identity is invalid")
+            entry = entries.get(path)
+            if entry is None or entry.get("sha") != expected_sha:
+                raise ValueError(f"Source file no longer matches the pinned commit: {path}")
+            if entry.get("size", 0) > _MAX_PATCH_SOURCE_BYTES:
+                raise ValueError(f"Source file exceeds the 1 MB validation limit: {path}")
+            blob_response = await client.get(
+                f"{base}/git/blobs/{expected_sha}", headers=headers,
+            )
+            blob_response.raise_for_status()
+            blob = blob_response.json()
+            if blob.get("sha") != expected_sha or blob.get("encoding") != "base64":
+                raise ValueError(f"GitHub returned an unexpected source blob: {path}")
+            import base64
+            try:
+                content = base64.b64decode(blob.get("content", ""), validate=False)
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"GitHub returned invalid base64 source: {path}") from exc
+            if len(content) > _MAX_PATCH_SOURCE_BYTES or _git_blob_sha(content) != expected_sha:
+                raise ValueError(f"Complete source hash verification failed: {path}")
+            try:
+                decoded = content.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError(f"Binary or non-UTF-8 source is not supported: {path}") from exc
+            result[path] = {
+                "content": decoded,
+                "content_sha": expected_sha,
+                "size": len(content),
+            }
+        return result
