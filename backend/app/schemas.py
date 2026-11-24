@@ -119,3 +119,34 @@ class RepositoryIndexJobResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: datetime | None = None
+
+class RemixSessionCreateRequest(BaseModel):
+    app_id: str = Field(pattern=r"^[0-9a-fA-F-]{36}$")
+    title: str = Field(default="New remix", min_length=1, max_length=120)
+
+
+class RemixMessageCreateRequest(BaseModel):
+    content: str = Field(min_length=3, max_length=4_000)
+
+
+class RemixMessageResponse(BaseModel):
+    id: str
+    role: str
+    content: str
+    message_type: str
+    evidence: list[dict] = Field(default_factory=list)
+    created_at: datetime
+
+
+class RemixSessionResponse(BaseModel):
+    id: str
+    app_id: str
+    app_name: str
+    repository_url: str
+    source_commit_sha: str
+    title: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[RemixMessageResponse] = Field(default_factory=list)
+
