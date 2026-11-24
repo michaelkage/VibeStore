@@ -46,7 +46,7 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
         commit_sha = branch_response.json()["commit"]["sha"]
 
         tree_response = await client.get(
-            f"{base}/git/trees/{quote(branch, safe='')}?recursive=1",
+            f"{base}/git/trees/{quote(commit_sha, safe='')}?recursive=1",
             headers=headers,
         )
         tree_response.raise_for_status()
@@ -90,7 +90,7 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
                 continue
             raw_url = (
                 f"https://raw.githubusercontent.com/{owner}/{repository}/"
-                f"{quote(branch, safe='')}/{quote(entry['path'], safe='/')}"
+                f"{quote(commit_sha, safe='')}/{quote(entry['path'], safe='/')}"
             )
             chunks = []
             total_bytes = 0
