@@ -11,22 +11,14 @@ cp .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Put the generated value in `JWT_SECRET_KEY`. Generate a separate random secret for `GITHUB_WEBHOOK_SECRET` if webhook ingestion will be enabled. Then start the services and apply migrations in order:
+Put the generated value in `JWT_SECRET_KEY`. Generate a separate random secret for `GITHUB_WEBHOOK_SECRET` if webhook ingestion will be enabled. Then start the services. The API container applies pending SQL migrations before starting the HTTP server. The migration runner uses a PostgreSQL advisory lock, records SHA-256 checksums, and refuses to silently accept edits to an already-applied migration:
 
 ```bash
 docker compose up --build -d
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/001_initial.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authentication.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/008_remix_sessions.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/009_remix_patch_proposals.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/010_remix_patch_validation.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/011_isolated_patch_artifacts.sql
+docker compose logs -f api
 ```
+
+To apply migrations explicitly (for example, in a one-off maintenance job), run `python -m app.migrate` from the backend container. Migration files are append-only: add a new numbered SQL file rather than modifying an applied migration.
 
 OpenAPI: http://localhost:8000/docs  
 Health: http://localhost:8000/health
