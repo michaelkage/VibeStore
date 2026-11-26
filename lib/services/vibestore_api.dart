@@ -124,8 +124,15 @@ class VibeStoreApi {
   Future<List<Map<String, dynamic>>> search(
     String query, {
     int limit = 20,
+    String? license,
+    int? minStars,
   }) async {
-    final response = await _post('search', {'query': query, 'limit': limit});
+    final response = await _post('search', {
+      'query': query,
+      'limit': limit,
+      if (license != null) 'license': license,
+      if (minStars != null) 'min_stars': minStars,
+    });
     final items = response['items'];
     if (items is! List) {
       throw const VibeStoreApiException('The search response was invalid.');
