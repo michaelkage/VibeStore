@@ -33,6 +33,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   List<Map<String, dynamic>> _catalog = [];
   List<Map<String, dynamic>> _repositoryFiles = [];
   int _repositoryFileTotal = 0;
+  final Set<String> _selectedSourcePaths = {};
   int _catalogTotal = 0;
   String _catalogSort = 'popular';
   List<Map<String, dynamic>> _submissions = [];
@@ -276,6 +277,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _remixProposals = [];
       _repositoryFiles = [];
       _repositoryFileTotal = 0;
+      _selectedSourcePaths.clear();
       _remixPromptController.clear();
       _notice =
           'Remix session created for $appName at commit ${session['source_commit_sha']}.';
@@ -292,6 +294,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _remixProposals = proposals;
       _repositoryFiles = [];
       _repositoryFileTotal = 0;
+      _selectedSourcePaths.clear();
       _notice = 'Opened remix session: ${session['title']}.';
     });
   });
@@ -331,7 +334,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       );
     }
     await _api!.configureBaseUrl(_baseUrlController.text);
-    await _api!.sendRemixMessage(active['id'].toString(), prompt);
+    await _api!.sendRemixMessage(
+      active['id'].toString(),
+      prompt,
+      contextPaths: _selectedSourcePaths.toList(),
+    );
     final session = await _api!.remixSession(active['id'].toString());
     if (!mounted) return;
     setState(() {
@@ -351,7 +358,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       );
     }
     await _api!.configureBaseUrl(_baseUrlController.text);
-    await _api!.generateRemixPatchProposal(active['id'].toString(), prompt);
+    await _api!.generateRemixPatchProposal(
+      active['id'].toString(),
+      prompt,
+      contextPaths: _selectedSourcePaths.take(12).toList(),
+    );
     final proposals = await _api!.remixPatchProposals(active['id'].toString());
     if (!mounted) return;
     setState(() {
@@ -917,7 +928,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       Row(
                         children: [
                           const Expanded(child: Text('Indexed source files')),
-                          Text('$_repositoryFileTotal files'),
+                          Text(
+                            '$_repositoryFileTotal files · ${_selectedSourcePaths.length} selected',
+                          ),
                           IconButton(
                             tooltip: 'Load indexed source files',
                             onPressed: _busy ? null : _loadRemixFiles,
@@ -934,6 +947,23 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         for (final file in _repositoryFiles)
                           ExpansionTile(
                             tilePadding: EdgeInsets.zero,
+                            leading: Checkbox(
+                              value: _selectedSourcePaths.contains(
+                                file['path']?.toString() ?? '',
+                              ),
+                              onChanged: _busy
+                                  ? null
+                                  : (selected) {
+                                      final path = file['path']?.toString() ?? '';
+                                      setState(() {
+                                        if (selected == true) {
+                                          _selectedSourcePaths.add(path);
+                                        } else {
+                                          _selectedSourcePaths.remove(path);
+                                        }
+                                      });
+                                    },
+                            ),
                             title: Text(file['path']?.toString() ?? 'Source file'),
                             subtitle: Text(
                               '${file['language'] ?? 'source'} · ${file['content_sha']?.toString().substring(0, 10) ?? 'unknown'}',
