@@ -96,8 +96,29 @@ class VibeStoreApi {
       'email': email.trim(),
       'password': password,
     });
-    _saveToken(response);
+    await _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
+  }
+
+  Future<Map<String, dynamic>> catalog({
+    String? query,
+    String sort = 'popular',
+    int limit = 24,
+    int offset = 0,
+  }) async {
+    final parameters = <String, String>{
+      'sort': sort,
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+    };
+    final response = await _get(
+      'catalog?${Uri(queryParameters: parameters).query}',
+    );
+    if (response is! Map<String, dynamic> || response['items'] is! List) {
+      throw const VibeStoreApiException('The catalog response was invalid.');
+    }
+    return response;
   }
 
   Future<List<Map<String, dynamic>>> search(
