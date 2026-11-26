@@ -23,6 +23,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   final _passwordController = TextEditingController();
   final _queryController = TextEditingController();
   final _minimumStarsController = TextEditingController();
+  final _fileQueryController = TextEditingController();
   String _searchLicense = 'any';
   final _repositoryController = TextEditingController();
   final _remixPromptController = TextEditingController();
@@ -30,6 +31,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   VibeStoreApi? _api;
   List<Map<String, dynamic>> _results = [];
   List<Map<String, dynamic>> _catalog = [];
+  List<Map<String, dynamic>> _repositoryFiles = [];
+  int _repositoryFileTotal = 0;
   int _catalogTotal = 0;
   String _catalogSort = 'popular';
   List<Map<String, dynamic>> _submissions = [];
@@ -99,6 +102,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     _passwordController.dispose();
     _queryController.dispose();
     _minimumStarsController.dispose();
+    _fileQueryController.dispose();
     _repositoryController.dispose();
     _remixPromptController.dispose();
     super.dispose();
@@ -285,6 +289,32 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _activeRemix = session;
       _remixProposals = proposals;
       _notice = 'Opened remix session: ${session['title']}.';
+    });
+  });
+
+  Future<void> _loadRemixFiles() => _run(() async {
+    final active = _activeRemix;
+    if (active == null) return;
+    final appId = active['app_id']?.toString();
+    if (appId == null || appId.isEmpty) {
+      throw const VibeStoreApiException(
+        'The active remix does not identify its source application.',
+      );
+    }
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final response = await _api!.repositoryFiles(
+      appId,
+      query: _fileQueryController.text,
+      limit: 50,
+    );
+    if (!mounted) return;
+    final items = response['items'] as List;
+    setState(() {
+      _repositoryFiles = items
+          .map((value) => Map<String, dynamic>.from(value as Map))
+          .toList(growable: false);
+      _repositoryFileTotal = response['total'] as int? ?? _repositoryFiles.length;
+      _notice = 'Loaded ${_repositoryFiles.length} of $_repositoryFileTotal indexed source files.';
     });
   });
 
@@ -879,6 +909,42 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         '${active['app_name'] ?? 'App'} · pinned to ${active['source_commit_sha'] ?? 'unknown commit'}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Expanded(child: Text('Indexed source files')),
+                          Text('$_repositoryFileTotal files'),
+                          IconButton(
+                            tooltip: 'Load indexed source files',
+                            onPressed: _busy ? null : _loadRemixFiles,
+                            icon: const Icon(Icons.folder_open_rounded),
+                          ),
+                        ],
+                      ),
+                      _textField(
+                        _fileQueryController,
+                        'Filter source paths',
+                        hint: 'MainActivity, AndroidManifest, build.gradle',
+                      ),
+                      if (_repositoryFiles.isNotEmpty) ...[
+                        for (final file in _repositoryFiles)
+                          ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            title: Text(file['path']?.toString() ?? 'Source file'),
+                            subtitle: Text(
+                              '${file['language'] ?? 'source'} · ${file['content_sha']?.toString().substring(0, 10) ?? 'unknown'}',
+                            ),
+                            children: [
+                              SelectableText(
+                                file['content_excerpt']?.toString() ?? '',
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
                       const SizedBox(height: 12),
                       for (final message
                           in (active['messages'] as List? ?? const []))
