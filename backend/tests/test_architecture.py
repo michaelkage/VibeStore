@@ -25,7 +25,7 @@ def test_ignores_sdk_mentions_outside_build_files():
 
 
 def test_manifest_flags_include_line_level_evidence():
-    manifest = """<manifest>
+    manifest = """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:usesCleartextTraffic="true">
       <activity android:name=".MainActivity" android:exported="true" />
     </application>
