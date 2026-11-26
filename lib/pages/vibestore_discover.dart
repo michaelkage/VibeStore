@@ -31,6 +31,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   VibeStoreApi? _api;
   List<Map<String, dynamic>> _results = [];
   List<Map<String, dynamic>> _catalog = [];
+  List<Map<String, dynamic>> _library = [];
+  final Set<String> _favoriteIds = {};
   List<Map<String, dynamic>> _repositoryFiles = [];
   int _repositoryFileTotal = 0;
   final Set<String> _selectedSourcePaths = {};
@@ -145,6 +147,45 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     setState(() {
       _passwordController.clear();
       _notice = 'Signed in as ${user['email']}.';
+    });
+  });
+
+  Future<void> _loadLibrary() => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final items = await _api!.myLibrary();
+    if (!mounted) return;
+    setState(() {
+      _library = items;
+      _favoriteIds
+        ..clear()
+        ..addAll(
+          items
+              .where((item) => item['favorited_at'] != null)
+              .map((item) => item['id'].toString()),
+        );
+      _notice = 'Loaded ${items.length} apps in your library.';
+    });
+  });
+
+  Future<void> _toggleFavorite(Map<String, dynamic> app) => _run(() async {
+    final appId = app['id'].toString();
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    if (_favoriteIds.contains(appId)) {
+      await _api!.unfavoriteApp(appId);
+    } else {
+      await _api!.favoriteApp(appId);
+    }
+    final items = await _api!.myLibrary();
+    if (!mounted) return;
+    setState(() {
+      _library = items;
+      _favoriteIds
+        ..clear()
+        ..addAll(
+          items
+              .where((item) => item['favorited_at'] != null)
+              .map((item) => item['id'].toString()),
+        );
     });
   });
 
@@ -758,6 +799,20 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text('★ ${app['stars'] ?? 0}'),
+                            if (api.isAuthenticated)
+                              IconButton(
+                                tooltip: _favoriteIds.contains(app['id'].toString())
+                                    ? 'Remove from library'
+                                    : 'Add to library',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _toggleFavorite(app),
+                                icon: Icon(
+                                  _favoriteIds.contains(app['id'].toString())
+                                      ? Icons.bookmark
+                                      : Icons.bookmark_border,
+                                ),
+                              ),
                             if (api.isAuthenticated && _supportsPatchRemix(app))
                               IconButton(
                                 tooltip: 'Start a remix',
@@ -877,6 +932,61 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         ),
                         isThreeLine: true,
                       ),
+                  ],
+                ]),
+                _section('My library', Icons.bookmarks_rounded, [
+                  if (!api.isAuthenticated)
+                    const Text('Sign in to save favorites and recent apps.')
+                  else ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('${_library.length} saved or recently opened apps'),
+                        ),
+                        IconButton(
+                          tooltip: 'Refresh library',
+                          onPressed: _busy ? null : _loadLibrary,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                      ],
+                    ),
+                    if (_library.isEmpty)
+                      const Text('Bookmark apps from the catalog to build your library.')
+                    else
+                      for (final app in _library)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(app['name']?.toString() ?? 'App'),
+                          subtitle: Text(
+                            [
+                              if (app['favorited_at'] != null) 'Favorite',
+                              if (app['last_opened_at'] != null) 'Recently opened',
+                              app['license']?.toString() ?? '',
+                            ].where((value) => value.isNotEmpty).join(' · '),
+                          ),
+                          leading: const Icon(Icons.android_rounded),
+                          trailing: IconButton(
+                            tooltip: 'Remove favorite',
+                            onPressed: _busy
+                                ? null
+                                : () => _toggleFavorite(app),
+                            icon: const Icon(Icons.bookmark_remove_outlined),
+                          ),
+                          onTap: _busy
+                              ? null
+                              : () => _run(() async {
+                                  await _api!.configureBaseUrl(
+                                    _baseUrlController.text,
+                                  );
+                                  await _api!.recordAppOpened(
+                                    app['id'].toString(),
+                                  );
+                                  await _loadCachedInspection(
+                                    app['id'].toString(),
+                                    app['name']?.toString() ?? 'app',
+                                  );
+                                }),
+                        ),
                   ],
                 ]),
                 _section('Remix Studio', Icons.auto_awesome_rounded, [
