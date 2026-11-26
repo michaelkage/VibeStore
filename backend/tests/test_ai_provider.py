@@ -1,3 +1,4 @@
+from typing import ClassVar
 from unittest.mock import AsyncMock
 
 import pytest
@@ -24,8 +25,8 @@ class FakeResponse:
 
 
 class FakeClient:
-    responses = []
-    calls = 0
+    responses: ClassVar[list] = []
+    calls: ClassVar[int] = 0
 
     def __init__(self, timeout=None):
         self.timeout = timeout
