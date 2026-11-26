@@ -88,6 +88,25 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         _baseUrlController.text = api.baseUrl;
         _initializing = false;
       });
+      if (api.baseUrl.isNotEmpty && api.isAuthenticated) {
+        try {
+          final items = await api.myLibrary();
+          if (mounted) {
+            setState(() {
+              _library = items;
+              _favoriteIds
+                ..clear()
+                ..addAll(
+                  items
+                      .where((item) => item['favorited_at'] != null)
+                      .map((item) => item['id'].toString()),
+                );
+            });
+          }
+        } on VibeStoreApiException {
+          // The discovery screen remains available if the library cannot load.
+        }
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -780,10 +799,17 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         contentPadding: EdgeInsets.zero,
                         onTap: _busy
                             ? null
-                            : () => _loadCachedInspection(
-                                app['id'].toString(),
-                                app['name']?.toString() ?? 'app',
-                              ),
+                            : () async {
+                                if (api.isAuthenticated) {
+                                  await _api!.recordAppOpened(
+                                    app['id'].toString(),
+                                  );
+                                }
+                                await _loadCachedInspection(
+                                  app['id'].toString(),
+                                  app['name']?.toString() ?? 'app',
+                                );
+                              },
                         title: Text(app['name']?.toString() ?? 'Unnamed app'),
                         subtitle: Text(
                           [
