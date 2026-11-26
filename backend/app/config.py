@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     ai_api_key: str | None = None
     ai_model: str | None = None
     ai_embedding_model: str | None = None
+    ai_request_timeout_seconds: int = Field(default=90, ge=5, le=300)
+    ai_max_retries: int = Field(default=2, ge=0, le=5)
 
     @property
     def allowed_origins(self) -> list[str]:
