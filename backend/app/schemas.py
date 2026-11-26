@@ -45,6 +45,23 @@ class RepositoryFilesResponse(BaseModel):
     offset: int
 
 
+class UserLibraryApp(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    repository_url: str
+    stars: int
+    license: str | None = None
+    latest_commit_sha: str | None = None
+    indexed_at: datetime | None = None
+    favorited_at: datetime | None = None
+    last_opened_at: datetime | None = None
+
+
+class UserLibraryResponse(BaseModel):
+    items: list[UserLibraryApp]
+
+
 class CatalogApp(BaseModel):
     id: str
     name: str
