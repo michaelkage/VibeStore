@@ -43,9 +43,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   bool _busy = false;
 
   bool _supportsPatchRemix(Map<String, dynamic> app) {
-    final repository = Uri.tryParse(
-      app['repository_url']?.toString() ?? '',
-    );
+    final repository = Uri.tryParse(app['repository_url']?.toString() ?? '');
     return repository?.scheme == 'https' &&
         repository?.host.toLowerCase() == 'github.com';
   }
@@ -751,10 +749,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                               value: 'any',
                               child: Text('Any license'),
                             ),
-                            DropdownMenuItem(
-                              value: 'MIT',
-                              child: Text('MIT'),
-                            ),
+                            DropdownMenuItem(value: 'MIT', child: Text('MIT')),
                             DropdownMenuItem(
                               value: 'Apache-2.0',
                               child: Text('Apache-2.0'),
@@ -815,7 +810,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         trailing: Wrap(
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            if (api.isAuthenticated && _supportsPatchRemix(result))
+                            if (api.isAuthenticated &&
+                                _supportsPatchRemix(result))
                               IconButton(
                                 tooltip: 'Start a remix',
                                 onPressed: _busy
