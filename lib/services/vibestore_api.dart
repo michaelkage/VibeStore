@@ -44,11 +44,11 @@ class VibeStoreApi {
     final accessToken = await secureStorage.read(key: _accessTokenKey);
     final refreshToken = await secureStorage.read(key: _refreshTokenKey);
     return VibeStoreApi._(
-      preferences: preferences,
-      secureStorage: secureStorage,
-      client: http.Client(),
-      baseUrl: preferences.getString(_baseUrlKey) ?? '',
-    )
+        preferences: preferences,
+        secureStorage: secureStorage,
+        client: http.Client(),
+        baseUrl: preferences.getString(_baseUrlKey) ?? '',
+      )
       .._accessToken = accessToken
       .._refreshToken = refreshToken;
   }
@@ -87,21 +87,19 @@ class VibeStoreApi {
   }
 
   Future<Map<String, dynamic>> register(String email, String password) async {
-    final response = await _post(
-      'auth/register',
-      {'email': email.trim(), 'password': password},
-      allowRefresh: false,
-    );
+    final response = await _post('auth/register', {
+      'email': email.trim(),
+      'password': password,
+    }, allowRefresh: false);
     await _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final response = await _post(
-      'auth/token',
-      {'email': email.trim(), 'password': password},
-      allowRefresh: false,
-    );
+    final response = await _post('auth/token', {
+      'email': email.trim(),
+      'password': password,
+    }, allowRefresh: false);
     await _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
   }
@@ -180,7 +178,7 @@ class VibeStoreApi {
   Map<String, String> _authorizedHeaders() {
     final headers = <String, String>{'Accept': 'application/json'};
     if (_accessToken case final token?) {
-      headers['Authorization'] = 'Bearer $token';
+      headers['Authorization'] = '***';
     }
     return headers;
   }
@@ -422,9 +420,7 @@ class VibeStoreApi {
         accessToken.isEmpty ||
         refreshToken is! String ||
         refreshToken.isEmpty) {
-      throw const VibeStoreApiException(
-        'The API returned an invalid session.',
-      );
+      throw const VibeStoreApiException('The API returned an invalid session.');
     }
     _accessToken = accessToken;
     _refreshToken = refreshToken;
@@ -513,16 +509,14 @@ class VibeStoreApi {
       'Content-Type': 'application/json',
     };
     if (_accessToken case final token?) {
-      headers['Authorization'] = 'Bearer $token';
+      headers['Authorization'] = '***';
     }
 
     final uri = Uri.parse('$_baseUrl/api/v1/$path');
     var response = await _client
         .post(uri, headers: headers, body: jsonEncode(payload))
         .timeout(timeout);
-    if (allowRefresh &&
-        response.statusCode == 401 &&
-        await _refreshSession()) {
+    if (allowRefresh && response.statusCode == 401 && await _refreshSession()) {
       final retryHeaders = _authorizedHeaders();
       retryHeaders['Content-Type'] = 'application/json';
       response = await _client
