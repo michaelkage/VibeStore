@@ -170,6 +170,7 @@ class RemixSessionCreateRequest(BaseModel):
 
 class RemixMessageCreateRequest(BaseModel):
     content: str = Field(min_length=3, max_length=4_000)
+    context_paths: list[str] = Field(default_factory=list, max_length=20)
 
 
 class RemixMessageResponse(BaseModel):
@@ -196,6 +197,7 @@ class RemixSessionResponse(BaseModel):
 
 class RemixPatchProposalCreateRequest(BaseModel):
     content: str = Field(min_length=3, max_length=4_000)
+    context_paths: list[str] = Field(default_factory=list, max_length=12)
 
 
 class RemixPatchProposalReviewRequest(BaseModel):
