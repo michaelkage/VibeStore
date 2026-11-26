@@ -4,22 +4,22 @@ import xml.etree.ElementTree as ET
 from app.services.manifest import ANDROID, _local_name
 
 SDK_PATTERNS = (
-    ("Firebase Analytics", "analytics", re.compile(r"com\\.google\\.firebase:firebase-analytics")),
-    ("Firebase Crashlytics", "crash_reporting", re.compile(r"com\\.google\\.firebase:firebase-crashlytics")),
-    ("Google Mobile Ads", "advertising", re.compile(r"com\\.google\\.android\\.gms:play-services-ads")),
-    ("AppsFlyer", "attribution", re.compile(r"com\\.appsflyer:af-android-sdk")),
-    ("Adjust", "attribution", re.compile(r"com\\.adjust\\.sdk:adjust-android")),
-    ("Meta Android SDK", "analytics", re.compile(r"com\\.facebook\\.android:facebook-android-sdk")),
-    ("Sentry Android", "crash_reporting", re.compile(r"io\\.sentry:sentry-android")),
-    ("Branch", "attribution", re.compile(r"com\\.branch\\.sdk\\.android:library")),
-    ("Mixpanel", "analytics", re.compile(r"com\\.mixpanel\\.android:mixpanel-android")),
-    ("Amplitude", "analytics", re.compile(r"com\\.amplitude:android-sdk")),
-    ("AppLovin", "advertising", re.compile(r"com\\.applovin:applovin-sdk")),
-    ("Unity Ads", "advertising", re.compile(r"com\\.unity3d\\.ads:unity-ads")),
-    ("OneSignal", "push_notifications", re.compile(r"com\\.onesignal:OneSignal")),
-    ("PostHog", "product_analytics", re.compile(r"com\\.posthog:posthog-android")),
-    ("Bugsnag", "crash_reporting", re.compile(r"com\\.bugsnag:bugsnag-android")),
-    ("Datadog", "observability", re.compile(r"com\\.datadoghq:dd-sdk-android")),
+    ("Firebase Analytics", "analytics", re.compile(r"com\.google\.firebase:firebase-analytics")),
+    ("Firebase Crashlytics", "crash_reporting", re.compile(r"com\.google\.firebase:firebase-crashlytics")),
+    ("Google Mobile Ads", "advertising", re.compile(r"com\.google\.android\.gms:play-services-ads")),
+    ("AppsFlyer", "attribution", re.compile(r"com\.appsflyer:af-android-sdk")),
+    ("Adjust", "attribution", re.compile(r"com\.adjust\.sdk:adjust-android")),
+    ("Meta Android SDK", "analytics", re.compile(r"com\.facebook\.android:facebook-android-sdk")),
+    ("Sentry Android", "crash_reporting", re.compile(r"io\.sentry:sentry-android")),
+    ("Branch", "attribution", re.compile(r"com\.branch\.sdk\.android:library")),
+    ("Mixpanel", "analytics", re.compile(r"com\.mixpanel\.android:mixpanel-android")),
+    ("Amplitude", "analytics", re.compile(r"com\.amplitude:android-sdk")),
+    ("AppLovin", "advertising", re.compile(r"com\.applovin:applovin-sdk")),
+    ("Unity Ads", "advertising", re.compile(r"com\.unity3d\.ads:unity-ads")),
+    ("OneSignal", "push_notifications", re.compile(r"com\.onesignal:OneSignal")),
+    ("PostHog", "product_analytics", re.compile(r"com\.posthog:posthog-android")),
+    ("Bugsnag", "crash_reporting", re.compile(r"com\.bugsnag:bugsnag-android")),
+    ("Datadog", "observability", re.compile(r"com\.datadoghq:dd-sdk-android")),
 )
 
 
@@ -55,10 +55,10 @@ def detect_declared_sdks(files: dict[str, str]) -> list[dict]:
 
 def _line_number_for_attribute(manifest: str, attribute: str, value: str) -> int:
     pattern = re.compile(
-        rf"android:{re.escape(attribute)}\\s*=\\s*[\"']{re.escape(value)}[\"']"
+        rf"android:{re.escape(attribute)}\s*=\s*[\"']{re.escape(value)}[\"']"
     )
     match = pattern.search(manifest)
-    return manifest.count("\\n", 0, match.start()) + 1 if match else 1
+    return manifest.count("\n", 0, match.start()) + 1 if match else 1
 
 
 def inspect_manifest_flags(manifest: str, file_path: str = "AndroidManifest.xml") -> list[dict]:
@@ -123,11 +123,11 @@ def inspect_manifest_flags(manifest: str, file_path: str = "AndroidManifest.xml"
         if component.attrib.get(ANDROID + "permission") or application_permission:
             continue
         component_name = component.attrib.get(ANDROID + "name", "unnamed component")
-        line_number = _line_number_for_attribute(
-            manifest,
-            "name",
-            component_name,
-        ) if component_name != "unnamed component" else 1
+        line_number = (
+            _line_number_for_attribute(manifest, "name", component_name)
+            if component_name != "unnamed component"
+            else 1
+        )
         findings.append({
             "category": "component_exposure",
             "severity": "review",
