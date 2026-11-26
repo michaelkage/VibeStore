@@ -591,7 +591,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                   Text(
                     api.isAuthenticated
                         ? 'Authenticated. Repository indexing is enabled.'
-                        : 'Sign in to submit repositories. Your access token stays in memory and is not written to preferences.',
+                        : 'Sign in to submit repositories. Your access token is stored using platform secure storage.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ]),
@@ -1190,8 +1190,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                   [
                     _textField(
                       _repositoryController,
-                      'Public GitHub repository URL',
-                      hint: 'https://github.com/owner/repository',
+                      'Public repository URL',
+                      hint: 'GitHub, GitLab.com or Codeberg repository URL',
                       keyboardType: TextInputType.url,
                     ),
                     const SizedBox(height: 12),
