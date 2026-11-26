@@ -146,6 +146,31 @@ class VibeStoreApi {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> myLibrary() async {
+    final response = await _get('library');
+    if (response is! Map<String, dynamic> || response['items'] is! List) {
+      throw const VibeStoreApiException('The library response was invalid.');
+    }
+    return (response['items'] as List)
+        .map((value) => Map<String, dynamic>.from(value as Map))
+        .toList(growable: false);
+  }
+
+  Future<void> favoriteApp(String appId) async {
+    final response = await _authorizedPut('library/$appId/favorite');
+    if (response.statusCode != 204) _decodeResponse(response);
+  }
+
+  Future<void> unfavoriteApp(String appId) async {
+    final response = await _authorizedDelete('library/$appId/favorite');
+    if (response.statusCode != 204) _decodeResponse(response);
+  }
+
+  Future<void> recordAppOpened(String appId) async {
+    final response = await _authorizedPost('library/$appId/open', const {});
+    if (response.statusCode != 204) _decodeResponse(response);
+  }
+
   Future<List<Map<String, dynamic>>> myRepositories() async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
@@ -475,6 +500,39 @@ class VibeStoreApi {
     if (response.statusCode == 401 && await _refreshSession()) {
       response = await _client
           .get(uri, headers: _authorizedHeaders())
+          .timeout(_timeout);
+    }
+    return response;
+  }
+
+  Future<http.Response> _authorizedPut(String path) async {
+    final uri = Uri.parse('$_baseUrl/api/v1/$path');
+    var response = await _client
+        .put(uri, headers: _authorizedHeaders())
+        .timeout(_timeout);
+    if (response.statusCode == 401 && await _refreshSession()) {
+      response = await _client
+          .put(uri, headers: _authorizedHeaders())
+          .timeout(_timeout);
+    }
+    return response;
+  }
+
+  Future<http.Response> _authorizedPost(
+    String path,
+    Map<String, dynamic> payload,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/api/v1/$path');
+    final headers = _authorizedHeaders();
+    headers['Content-Type'] = 'application/json';
+    var response = await _client
+        .post(uri, headers: headers, body: jsonEncode(payload))
+        .timeout(_timeout);
+    if (response.statusCode == 401 && await _refreshSession()) {
+      final retryHeaders = _authorizedHeaders();
+      retryHeaders['Content-Type'] = 'application/json';
+      response = await _client
+          .post(uri, headers: retryHeaders, body: jsonEncode(payload))
           .timeout(_timeout);
     }
     return response;
