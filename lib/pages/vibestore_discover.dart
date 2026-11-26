@@ -358,7 +358,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       final response = await _api!.patchArtifact(remixId, proposalId);
       if (response.headers['content-type']?.contains('application/zip') ??
           false) {
-        final savedPath = await FilePicker.platform.saveFile(
+        final savedPath = await FilePicker.saveFile(
           fileName: 'vibestore-patch-$proposalId.zip',
           bytes: response.bodyBytes,
         );
@@ -425,7 +425,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       });
 
   Future<void> _logout() async {
-    _api?.logout();
+    await _api?.logout();
     if (mounted) setState(() => _notice = 'Signed out.');
   }
 
@@ -644,10 +644,10 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         ],
                         onChanged: _busy
                             ? null
-                            : (value) {
+                            : (value) async {
                                 if (value == null) return;
                                 setState(() => _catalogSort = value);
-                                _loadCatalog();
+                                await _loadCatalog();
                               },
                       ),
                       const Spacer(),
