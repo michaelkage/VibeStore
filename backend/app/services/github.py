@@ -8,8 +8,9 @@ import httpx
 from app.config import get_settings
 
 _GITHUB_RE = re.compile(r"^https?://github\.com/([\w.-]+)/([\w.-]+?)(?:\.git)?/?$")
-_MAX_FILE_BYTES = 1_000_000
-_MAX_INDEXED_FILES = 12
+_MAX_FILE_BYTES = 512_000
+_MAX_TOTAL_SOURCE_BYTES = 12_000_000
+_MAX_INDEXED_FILES = 60
 
 
 def parse_github_url(repository_url: str) -> tuple[str, str]:
@@ -57,6 +58,19 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
         def is_indexable_file(path: str) -> bool:
             normalized = path.lower()
             filename = normalized.rsplit("/", 1)[-1]
+            suffix = "." + filename.rsplit(".", 1)[-1] if "." in filename else ""
+            excluded = {
+                ".git",
+                ".gradle",
+                "build",
+                "generated",
+                "node_modules",
+                "vendor",
+                "dist",
+                "target",
+            }
+            if any(part in excluded for part in normalized.split("/")):
+                return False
             return (
                 normalized in {"readme.md", "readme"}
                 or filename == "androidmanifest.xml"
@@ -67,6 +81,7 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
                     "settings.gradle.kts",
                     "libs.versions.toml",
                 }
+                or suffix in {".kt", ".java", ".xml", ".gradle", ".kts", ".toml", ".pro", ".properties"}
             )
 
         candidates = [
@@ -85,6 +100,7 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
 
         candidates.sort(key=priority)
         files = []
+        total_source_bytes = 0
         for entry in candidates[:_MAX_INDEXED_FILES]:
             if entry.get("size", 0) > _MAX_FILE_BYTES:
                 continue
@@ -108,6 +124,9 @@ async def fetch_repository_snapshot(repository_url: str) -> dict:
             if oversized:
                 continue
             content_bytes = b"".join(chunks)
+            if total_source_bytes + len(content_bytes) > _MAX_TOTAL_SOURCE_BYTES:
+                break
+            total_source_bytes += len(content_bytes)
             files.append({
                 "path": entry["path"],
                 "content_sha": entry["sha"],

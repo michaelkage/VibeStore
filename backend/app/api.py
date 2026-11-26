@@ -6,7 +6,7 @@ import math
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,8 @@ from app.ai.openai_compatible import get_ai_provider
 from app.auth import (
     _DUMMY_PASSWORD_HASH,
     create_access_token,
+    create_refresh_token,
+    hash_refresh_token,
     get_current_user,
     hash_password,
     verify_password,
@@ -27,6 +29,7 @@ from app.schemas import (
     InspectionResponse,
     IndexRepositoryResponse,
     LoginRequest,
+    RefreshTokenRequest,
     ManifestFinding,
     RegisterRequest,
     RepositoryRequest,
@@ -34,6 +37,12 @@ from app.schemas import (
     RepositoryIndexJobResponse,
     SearchRequest,
     SearchResult,
+    CatalogApp,
+    CatalogResponse,
+    UserLibraryApp,
+    UserLibraryResponse,
+    RepositoryFileEntry,
+    RepositoryFilesResponse,
     TokenResponse,
     UserResponse,
     RemixSessionCreateRequest,
@@ -46,12 +55,15 @@ from app.schemas import (
 )
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
 from app.services.github import (
-    fetch_repository_files,
     fetch_repository_files_at_commit,
-    fetch_repository_snapshot,
     parse_github_url,
 )
 from app.services.manifest import inspect_manifest
+from app.services.repository_sources import (
+    fetch_repository_files,
+    fetch_repository_snapshot,
+    parse_repository_url,
+)
 from app.services.remix import generate_change_plan
 from app.services.remix_proposals import generate_patch_proposal, validate_patch_against_sources
 
@@ -90,6 +102,22 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
             {"email": email, "password_hash": password_hash},
         )
         user = result.mappings().one()
+        refresh_token, refresh_hash = create_refresh_token()
+        await session.execute(
+            text("""
+                INSERT INTO user_refresh_tokens (token_hash, user_id, expires_at)
+                VALUES (
+                    :token_hash,
+                    CAST(:user_id AS uuid),
+                    now() + make_interval(days => :ttl_days)
+                )
+            """),
+            {
+                "token_hash": refresh_hash,
+                "user_id": user["id"],
+                "ttl_days": settings.jwt_refresh_token_days,
+            },
+        )
         await session.commit()
     except IntegrityError:
         await session.rollback()
@@ -97,6 +125,7 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
     user_response = UserResponse(**dict(user))
     return TokenResponse(
         access_token=create_access_token(user_response.id),
+        refresh_token=refresh_token,
         expires_in=settings.jwt_access_token_minutes * 60,
         user=user_response,
     )
@@ -126,11 +155,128 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
     user_response = UserResponse(id=user["id"], email=user["email"], created_at=user["created_at"])
+    refresh_token, refresh_hash = create_refresh_token()
+    await session.execute(
+        text("""
+            INSERT INTO user_refresh_tokens (token_hash, user_id, expires_at)
+            VALUES (
+                :token_hash,
+                CAST(:user_id AS uuid),
+                now() + make_interval(days => :ttl_days)
+            )
+        """),
+        {
+            "token_hash": refresh_hash,
+            "user_id": user_response.id,
+            "ttl_days": settings.jwt_refresh_token_days,
+        },
+    )
+    await session.commit()
     return TokenResponse(
         access_token=create_access_token(user_response.id),
+        refresh_token=refresh_token,
         expires_in=settings.jwt_access_token_minutes * 60,
         user=user_response,
     )
+
+
+@router.post(
+    "/auth/refresh",
+    response_model=TokenResponse,
+    tags=["authentication"],
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
+async def refresh_session(
+    payload: RefreshTokenRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    settings = get_settings()
+    if len(settings.jwt_secret_key) < 32:
+        raise HTTPException(status_code=503, detail="Authentication is not configured")
+    old_hash = hash_refresh_token(payload.refresh_token)
+    revoked = await session.execute(
+        text("""
+            UPDATE user_refresh_tokens
+            SET revoked_at = now(), last_used_at = now()
+            WHERE token_hash = :token_hash
+              AND revoked_at IS NULL
+              AND expires_at > now()
+            RETURNING user_id::text AS user_id
+        """),
+        {"token_hash": old_hash},
+    )
+    row = revoked.mappings().first()
+    if row is None:
+        await session.rollback()
+        raise HTTPException(status_code=401, detail="Refresh token is invalid or expired")
+    user_result = await session.execute(
+        text("""
+            SELECT id::text AS id, email, created_at
+            FROM users
+            WHERE id = CAST(:user_id AS uuid) AND disabled = false
+        """),
+        {"user_id": row["user_id"]},
+    )
+    user = user_result.mappings().first()
+    if user is None:
+        await session.rollback()
+        raise HTTPException(status_code=401, detail="Account is unavailable")
+    user_response = UserResponse(**dict(user))
+    refresh_token, new_hash = create_refresh_token()
+    await session.execute(
+        text("""
+            INSERT INTO user_refresh_tokens (token_hash, user_id, expires_at)
+            VALUES (
+                :token_hash,
+                CAST(:user_id AS uuid),
+                now() + make_interval(days => :ttl_days)
+            )
+        """),
+        {
+            "token_hash": new_hash,
+            "user_id": user_response.id,
+            "ttl_days": settings.jwt_refresh_token_days,
+        },
+    )
+    await session.execute(
+        text("""
+            UPDATE user_refresh_tokens
+            SET replaced_by_hash = :new_hash
+            WHERE token_hash = :old_hash
+        """),
+        {"new_hash": new_hash, "old_hash": old_hash},
+    )
+    await session.commit()
+    return TokenResponse(
+        access_token=create_access_token(user_response.id),
+        refresh_token=refresh_token,
+        expires_in=settings.jwt_access_token_minutes * 60,
+        user=user_response,
+    )
+
+
+@router.post(
+    "/auth/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["authentication"],
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
+async def logout_session(
+    payload: RefreshTokenRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    await session.execute(
+        text("""
+            UPDATE user_refresh_tokens
+            SET revoked_at = now(), last_used_at = now()
+            WHERE token_hash = :token_hash AND revoked_at IS NULL
+        """),
+        {"token_hash": hash_refresh_token(payload.refresh_token)},
+    )
+    await session.commit()
+    from fastapi import Response
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/auth/me", response_model=UserResponse, tags=["authentication"])
@@ -294,7 +440,7 @@ async def enqueue_repository_index_job(
 ):
     repository_url = str(payload.repository_url)
     try:
-        parse_github_url(repository_url)
+        parse_repository_url(repository_url)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     job_id = str(uuid4())
@@ -459,6 +605,116 @@ async def github_webhook(
     return {"accepted": True, "job_id": job_id}
 
 
+@router.get("/library", response_model=UserLibraryResponse, tags=["library"])
+async def get_user_library(
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (
+        await session.execute(
+            text("""
+                SELECT apps.id::text AS id, apps.name, apps.description,
+                       apps.repository_url, apps.stars, apps.license,
+                       apps.latest_commit_sha, apps.indexed_at,
+                       library.favorited_at, library.last_opened_at
+                FROM user_app_library library
+                JOIN apps ON apps.id = library.app_id
+                WHERE library.user_id = CAST(:user_id AS uuid)
+                ORDER BY library.last_opened_at DESC NULLS LAST,
+                         library.favorited_at DESC NULLS LAST, apps.name
+            """),
+            {"user_id": user["id"]},
+        )
+    ).mappings()
+    return UserLibraryResponse(
+        items=[UserLibraryApp(**dict(row)) for row in rows],
+    )
+
+
+@router.put(
+    "/library/{app_id}/favorite",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["library"],
+)
+async def favorite_app(
+    app_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    exists = await session.execute(
+        text("SELECT 1 FROM apps WHERE id = CAST(:app_id AS uuid)"),
+        {"app_id": str(app_id)},
+    )
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    await session.execute(
+        text("""
+            INSERT INTO user_app_library (user_id, app_id, favorited_at)
+            VALUES (CAST(:user_id AS uuid), CAST(:app_id AS uuid), now())
+            ON CONFLICT (user_id, app_id) DO UPDATE SET favorited_at = now()
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/library/{app_id}/favorite",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["library"],
+)
+async def unfavorite_app(
+    app_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await session.execute(
+        text("""
+            DELETE FROM user_app_library
+            WHERE user_id = CAST(:user_id AS uuid)
+              AND app_id = CAST(:app_id AS uuid)
+              AND last_opened_at IS NULL
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.execute(
+        text("""
+            UPDATE user_app_library
+            SET favorited_at = NULL
+            WHERE user_id = CAST(:user_id AS uuid)
+              AND app_id = CAST(:app_id AS uuid)
+              AND last_opened_at IS NOT NULL
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/library/{app_id}/open",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["library"],
+)
+async def record_app_opened(
+    app_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await session.execute(
+        text("""
+            INSERT INTO user_app_library (user_id, app_id, last_opened_at)
+            SELECT CAST(:user_id AS uuid), apps.id, now()
+            FROM apps WHERE apps.id = CAST(:app_id AS uuid)
+            ON CONFLICT (user_id, app_id) DO UPDATE SET last_opened_at = now()
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get(
     "/repositories/mine",
     response_model=list[RepositorySubmissionResponse],
@@ -514,6 +770,70 @@ async def remove_my_repository(
     await session.commit()
 
 
+
+def _catalog_order_by(sort: str) -> str:
+    ordering = {
+        "popular": "stars DESC, name ASC",
+        "recent": "indexed_at DESC NULLS LAST, name ASC",
+        "name": "name ASC",
+    }
+    try:
+        return ordering[sort]
+    except KeyError:
+        raise HTTPException(
+            status_code=422,
+            detail="Sort must be one of: popular, recent, name",
+        ) from None
+
+
+@router.get("/catalog", response_model=CatalogResponse, tags=["discovery"])
+async def browse_catalog(
+    query: str | None = Query(default=None, max_length=200),
+    sort: str = "popular",
+    limit: int = Query(default=24, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    session: AsyncSession = Depends(get_session),
+):
+    normalized_query = query.strip() if query else None
+    if normalized_query is not None and len(normalized_query) < 2:
+        raise HTTPException(status_code=422, detail="Catalog query must contain at least 2 characters")
+    order_by = _catalog_order_by(sort)
+    params = {
+        "query": normalized_query,
+        "limit": limit,
+        "offset": offset,
+    }
+    rows = (
+        await session.execute(
+            text(f"""
+                SELECT id::text AS id, name, description, repository_url,
+                       stars, license, latest_commit_sha, indexed_at
+                FROM apps
+                WHERE (:query IS NULL OR
+                       search_document @@ websearch_to_tsquery('english', :query))
+                ORDER BY {order_by}
+                LIMIT :limit OFFSET :offset
+            """),
+            params,
+        )
+    ).mappings()
+    total = await session.scalar(
+        text("""
+            SELECT count(*)
+            FROM apps
+            WHERE (:query IS NULL OR
+                   search_document @@ websearch_to_tsquery('english', :query))
+        """),
+        {"query": normalized_query},
+    )
+    return CatalogResponse(
+        items=[CatalogApp(**dict(row)) for row in rows],
+        total=int(total or 0),
+        limit=limit,
+        offset=offset,
+    )
+
+
 @router.post("/search", response_model=list[SearchResult], tags=["discovery"])
 async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(get_session)):
     settings = get_settings()
@@ -529,18 +849,34 @@ async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(ge
         except (RuntimeError, httpx.HTTPError, ValueError) as exc:
             raise HTTPException(status_code=503, detail="Semantic search is temporarily unavailable") from exc
 
+    params = {
+        "query": payload.query,
+        "embedding": embedding_literal,
+        "embedding_model": settings.ai_embedding_model,
+        "limit": payload.limit,
+        "license": payload.license.strip() if payload.license else None,
+        "min_stars": payload.min_stars,
+    }
     if embedding_literal is not None:
         statement = text("""
-            WITH lexical AS (
-                SELECT id, ts_rank(search_document, websearch_to_tsquery('english', :query))::float AS score
-                FROM apps
-                WHERE search_document @@ websearch_to_tsquery('english', :query)
+            WITH eligible AS (
+                SELECT id FROM apps
+                WHERE (:license IS NULL OR lower(coalesce(license, '')) = lower(:license))
+                  AND (:min_stars IS NULL OR stars >= :min_stars)
+            ),
+            lexical AS (
+                SELECT apps.id,
+                       ts_rank(apps.search_document, websearch_to_tsquery('english', :query))::float AS score
+                FROM apps JOIN eligible ON eligible.id = apps.id
+                WHERE apps.search_document @@ websearch_to_tsquery('english', :query)
             ),
             semantic AS (
-                SELECT id, GREATEST(0, 1 - (embedding <=> CAST(:embedding AS vector)))::float AS score
-                FROM apps
-                WHERE embedding IS NOT NULL AND embedding_model = :embedding_model
-                ORDER BY embedding <=> CAST(:embedding AS vector)
+                SELECT apps.id,
+                       GREATEST(0, 1 - (apps.embedding <=> CAST(:embedding AS vector)))::float AS score
+                FROM apps JOIN eligible ON eligible.id = apps.id
+                WHERE apps.embedding IS NOT NULL
+                  AND apps.embedding_model = :embedding_model
+                ORDER BY apps.embedding <=> CAST(:embedding AS vector)
                 LIMIT :limit
             ),
             ranked AS (
@@ -549,28 +885,24 @@ async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(ge
                 SELECT id, score * 0.35 AS score FROM semantic
             )
             SELECT apps.id::text AS id, apps.name, apps.description, apps.repository_url,
-                   SUM(ranked.score)::float AS score
+                   apps.stars, apps.license, SUM(ranked.score)::float AS score
             FROM ranked JOIN apps ON apps.id = ranked.id
-            GROUP BY apps.id, apps.name, apps.description, apps.repository_url
-            ORDER BY score DESC
+            GROUP BY apps.id, apps.name, apps.description, apps.repository_url,
+                     apps.stars, apps.license
+            ORDER BY score DESC, apps.stars DESC
             LIMIT :limit
         """)
-        params = {
-            "query": payload.query,
-            "embedding": embedding_literal,
-            "embedding_model": settings.ai_embedding_model,
-            "limit": payload.limit,
-        }
     else:
         statement = text("""
-            SELECT id::text, name, description, repository_url,
+            SELECT id::text, name, description, repository_url, stars, license,
                    ts_rank(search_document, websearch_to_tsquery('english', :query)) AS score
             FROM apps
             WHERE search_document @@ websearch_to_tsquery('english', :query)
+              AND (:license IS NULL OR lower(coalesce(license, '')) = lower(:license))
+              AND (:min_stars IS NULL OR stars >= :min_stars)
             ORDER BY score DESC, stars DESC
             LIMIT :limit
         """)
-        params = {"query": payload.query, "limit": payload.limit}
 
     try:
         rows = (await session.execute(statement, params)).mappings()
@@ -582,6 +914,55 @@ async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(ge
                 detail="Catalog schema is not initialized; apply the backend migrations",
             ) from exc
         raise
+
+@router.get(
+    "/apps/{app_id}/files",
+    response_model=RepositoryFilesResponse,
+    tags=["repositories"],
+)
+async def list_repository_files(
+    app_id: UUID,
+    query: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    session: AsyncSession = Depends(get_session),
+):
+    normalized_query = query.strip() if query else None
+    rows = (
+        await session.execute(
+            text("""
+                SELECT id::text AS id, path, language, content_sha,
+                       content_excerpt, indexed_at
+                FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid)
+                  AND (:query IS NULL OR path ILIKE '%' || :query || '%')
+                ORDER BY path
+                LIMIT :limit OFFSET :offset
+            """),
+            {
+                "app_id": str(app_id),
+                "query": normalized_query,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+    ).mappings()
+    total = await session.scalar(
+        text("""
+            SELECT count(*)
+            FROM repository_files
+            WHERE app_id = CAST(:app_id AS uuid)
+              AND (:query IS NULL OR path ILIKE '%' || :query || '%')
+        """),
+        {"app_id": str(app_id), "query": normalized_query},
+    )
+    return RepositoryFilesResponse(
+        items=[RepositoryFileEntry(**dict(row)) for row in rows],
+        total=int(total or 0),
+        limit=limit,
+        offset=offset,
+    )
+
 
 @router.get(
     "/apps/{app_id}/inspection",
@@ -630,6 +1011,9 @@ async def inspect_repository(payload: RepositoryRequest):
             repository=str(payload.repository_url),
             manifest_found=False,
             permissions=[],
+            sdk_configuration={},
+            declared_features=[],
+            application_flags=[],
             sdk_detections=sdk_detections,
             manifest_warnings=[],
             limitations=[
@@ -647,6 +1031,9 @@ async def inspect_repository(payload: RepositoryRequest):
         manifest_found=True,
         package_name=parsed["package_name"],
         permissions=[ManifestFinding(**finding) for finding in parsed["permissions"]],
+        sdk_configuration=parsed["sdk_configuration"],
+        declared_features=parsed["declared_features"],
+        application_flags=parsed["application_flags"],
         sdk_detections=sdk_detections,
         manifest_warnings=inspect_manifest_flags(manifest, manifest_path),
         limitations=[
@@ -788,20 +1175,36 @@ async def add_remix_message(
         """),
         {"id": str(remix_id)},
     )).mappings()
-    files = (await session.execute(
-        text("""
-            SELECT path, content_excerpt FROM repository_files
-            WHERE app_id = CAST(:app_id AS uuid)
-            ORDER BY CASE
-                WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
-                WHEN lower(path) LIKE '%build.gradle%' THEN 1
-                WHEN lower(path) LIKE '%readme%' THEN 2
-                ELSE 3 END, path
-            LIMIT 12
-        """),
-        {"app_id": remix["app_id"]},
-    )).mappings()
+    context_paths = list(dict.fromkeys(payload.context_paths))
+    if context_paths:
+        files = (await session.execute(
+            text("""
+                SELECT path, content_excerpt FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid) AND path = ANY(:paths)
+                ORDER BY path
+            """),
+            {"app_id": remix["app_id"], "paths": context_paths},
+        )).mappings()
+    else:
+        files = (await session.execute(
+            text("""
+                SELECT path, content_excerpt FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid)
+                ORDER BY CASE
+                    WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
+                    WHEN lower(path) LIKE '%build.gradle%' THEN 1
+                    WHEN lower(path) LIKE '%readme%' THEN 2
+                    ELSE 3 END, path
+                LIMIT 12
+            """),
+            {"app_id": remix["app_id"]},
+        )).mappings()
     file_rows = [dict(item) for item in files]
+    if context_paths and len(file_rows) != len(context_paths):
+        raise HTTPException(
+            status_code=422,
+            detail="One or more selected source files are not part of the indexed repository snapshot",
+        )
     # Recheck after reading the snapshot to close the catalog-refresh race window.
     current = await session.execute(
         text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),
@@ -848,24 +1251,46 @@ async def create_remix_patch_proposal(
     user=Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ):
     owned = await session.execute(text("""
-        SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha, apps.latest_commit_sha
+        SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha,
+               apps.latest_commit_sha, apps.repository_url
         FROM remix_sessions rs JOIN apps ON apps.id = rs.app_id
         WHERE rs.id = CAST(:id AS uuid) AND rs.owner_id = CAST(:owner_id AS uuid) AND rs.status = 'planning'
     """), {"id": str(remix_id), "owner_id": user["id"]})
     remix = owned.mappings().first()
     if remix is None:
         raise HTTPException(status_code=404, detail="Active remix session not found")
+    if not str(remix["repository_url"]).startswith("https://github.com/"):
+        raise HTTPException(
+            status_code=409,
+            detail="AI patch proposals are currently supported only for GitHub repositories",
+        )
     if remix["latest_commit_sha"] != remix["source_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session")
     await enforce_remix_rate_limit(user["id"])
-    rows = (await session.execute(text("""
-        SELECT path, content_sha, content_excerpt FROM repository_files
-        WHERE app_id = CAST(:app_id AS uuid)
-        ORDER BY CASE WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
-                      WHEN lower(path) LIKE '%build.gradle%' THEN 1 ELSE 2 END, path
-        LIMIT 12
-    """), {"app_id": remix["app_id"]})).mappings()
+    context_paths = list(dict.fromkeys(payload.context_paths))
+    if context_paths:
+        rows = (await session.execute(
+            text("""
+                SELECT path, content_sha, content_excerpt FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid) AND path = ANY(:paths)
+                ORDER BY path
+            """),
+            {"app_id": remix["app_id"], "paths": context_paths},
+        )).mappings()
+    else:
+        rows = (await session.execute(text("""
+            SELECT path, content_sha, content_excerpt FROM repository_files
+            WHERE app_id = CAST(:app_id AS uuid)
+            ORDER BY CASE WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
+                          WHEN lower(path) LIKE '%build.gradle%' THEN 1 ELSE 2 END, path
+            LIMIT 12
+        """), {"app_id": remix["app_id"]})).mappings()
     files = [dict(row) for row in rows]
+    if context_paths and len(files) != len(context_paths):
+        raise HTTPException(
+            status_code=422,
+            detail="One or more selected source files are not part of the indexed repository snapshot",
+        )
     if not files:
         raise HTTPException(status_code=409, detail="No indexed source files are available for a proposal")
     current = await session.execute(text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),

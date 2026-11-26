@@ -11,8 +11,14 @@ from app.config import get_settings
 from app.db import SessionLocal, dispose_engine
 from app.redis_client import close_redis, init_redis, redis_is_healthy
 from app.schemas import HealthResponse
+from app.observability import (
+    RequestObservabilityMiddleware,
+    configure_logging,
+    metrics_payload,
+)
 
 settings = get_settings()
+configure_logging()
 
 
 @asynccontextmanager
@@ -31,8 +37,10 @@ app.add_middleware(
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
+app.add_middleware(RequestObservabilityMiddleware)
 app.include_router(router, prefix=settings.api_v1_prefix)
 app.include_router(patch_processing_router, prefix=settings.api_v1_prefix)
 
@@ -53,3 +61,16 @@ async def health():
         database=database_status,
         redis=redis_status,
     )
+
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    if not settings.metrics_enabled:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Metrics endpoint is disabled")
+    from fastapi.responses import Response
+
+    payload, media_type = metrics_payload()
+    return Response(content=payload, media_type=media_type)

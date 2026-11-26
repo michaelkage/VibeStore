@@ -14,6 +14,8 @@ class HealthResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(min_length=3, max_length=500)
     limit: int = Field(default=20, ge=1, le=50)
+    license: str | None = Field(default=None, min_length=1, max_length=100)
+    min_stars: int | None = Field(default=None, ge=0)
 
 
 class SearchResult(BaseModel):
@@ -22,6 +24,60 @@ class SearchResult(BaseModel):
     description: str | None = None
     repository_url: str
     score: float
+    stars: int = 0
+    license: str | None = None
+
+
+
+class RepositoryFileEntry(BaseModel):
+    id: str
+    path: str
+    language: str | None = None
+    content_sha: str
+    content_excerpt: str | None = None
+    indexed_at: datetime
+
+
+class RepositoryFilesResponse(BaseModel):
+    items: list[RepositoryFileEntry]
+    total: int
+    limit: int
+    offset: int
+
+
+class UserLibraryApp(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    repository_url: str
+    stars: int
+    license: str | None = None
+    latest_commit_sha: str | None = None
+    indexed_at: datetime | None = None
+    favorited_at: datetime | None = None
+    last_opened_at: datetime | None = None
+
+
+class UserLibraryResponse(BaseModel):
+    items: list[UserLibraryApp]
+
+
+class CatalogApp(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    repository_url: str
+    stars: int
+    license: str | None = None
+    latest_commit_sha: str | None = None
+    indexed_at: datetime | None = None
+
+
+class CatalogResponse(BaseModel):
+    items: list[CatalogApp]
+    total: int
+    limit: int
+    offset: int
 
 
 class RepositoryRequest(BaseModel):
@@ -59,6 +115,9 @@ class InspectionResponse(BaseModel):
     manifest_found: bool
     package_name: str | None = None
     permissions: list[ManifestFinding]
+    sdk_configuration: dict = Field(default_factory=dict)
+    declared_features: list[dict] = Field(default_factory=list)
+    application_flags: list[dict] = Field(default_factory=list)
     sdk_detections: list[SDKDetection] = Field(default_factory=list)
     manifest_warnings: list[StaticManifestFinding] = Field(default_factory=list)
     limitations: list[str]
@@ -74,6 +133,10 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(min_length=32, max_length=512)
+
+
 class UserResponse(BaseModel):
     id: str
     email: str
@@ -82,6 +145,7 @@ class UserResponse(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     expires_in: int
     user: UserResponse
@@ -128,6 +192,7 @@ class RemixSessionCreateRequest(BaseModel):
 
 class RemixMessageCreateRequest(BaseModel):
     content: str = Field(min_length=3, max_length=4_000)
+    context_paths: list[str] = Field(default_factory=list, max_length=20)
 
 
 class RemixMessageResponse(BaseModel):
@@ -154,6 +219,7 @@ class RemixSessionResponse(BaseModel):
 
 class RemixPatchProposalCreateRequest(BaseModel):
     content: str = Field(min_length=3, max_length=4_000)
+    context_paths: list[str] = Field(default_factory=list, max_length=12)
 
 
 class RemixPatchProposalReviewRequest(BaseModel):

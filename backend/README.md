@@ -11,21 +11,14 @@ cp .env.example .env
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Put the generated value in `JWT_SECRET_KEY`. Generate a separate random secret for `GITHUB_WEBHOOK_SECRET` if webhook ingestion will be enabled. Then start the services and apply migrations in order:
+Put the generated value in `JWT_SECRET_KEY`. Generate a separate random secret for `GITHUB_WEBHOOK_SECRET` if webhook ingestion will be enabled. Then start the services. The API container applies pending SQL migrations before starting the HTTP server. The migration runner uses a PostgreSQL advisory lock, records SHA-256 checksums, and refuses to silently accept edits to an already-applied migration:
 
 ```bash
 docker compose up --build -d
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/001_initial.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/002_authentication.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/003_repository_submissions.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/004_semantic_embeddings.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/005_async_repository_indexing.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/006_catalog_refresh_reconciliation.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/007_cached_inspection_reports.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/008_remix_sessions.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/009_remix_patch_proposals.sql
-docker compose exec -T db psql -U vibestore -d vibestore < migrations/010_remix_patch_validation.sql
+docker compose logs -f api
 ```
+
+To apply migrations explicitly (for example, in a one-off maintenance job), run `python -m app.migrate` from the backend container. Migration files are append-only: add a new numbered SQL file rather than modifying an applied migration.
 
 OpenAPI: http://localhost:8000/docs  
 Health: http://localhost:8000/health
@@ -36,14 +29,17 @@ Health: http://localhost:8000/health
 - `POST /api/v1/auth/register`: create an account and issue a short-lived access token.
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
-- `POST /api/v1/repositories/index`: synchronous authenticated indexing endpoint retained for compatibility.
+- `POST /api/v1/repositories/index`: synchronous authenticated indexing endpoint retained for compatibility. Repository indexing and static inspection support public GitHub, GitLab.com, and Codeberg repositories; patch validation and artifact processing currently remain GitHub-only.
 - `POST /api/v1/repositories/index-jobs`: enqueue authenticated repository indexing and return a job ID (HTTP 202).
 - `GET /api/v1/repositories/jobs/{job_id}`: poll the caller-owned job state, attempt count, error and resulting catalog app ID.
 - `POST /api/v1/webhooks/github`: signed GitHub webhook endpoint; queues default-branch `push` deliveries and deduplicates delivery IDs.
 - `GET /api/v1/repositories/mine`: list only the authenticated user's repository submissions.
 - `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
-- `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
-- `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.
+- `GET /api/v1/catalog`: browse the indexed app catalog with bounded pagination, optional full-text filtering, and popular/recent/name sorting.
+- `GET /api/v1/apps/{app_id}/files`: browse and filter the indexed source-file paths and excerpts for Remix Studio.
+- `GET /api/v1/library`, `PUT /api/v1/library/{app_id}/favorite`, `DELETE /api/v1/library/{app_id}/favorite`, `POST /api/v1/library/{app_id}/open`: owner-scoped favorites and recently opened applications.
+- `POST /api/v1/search`: PostgreSQL full-text search with optional exact SPDX-license and minimum-star filters, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
+- `POST /api/v1/repositories/inspect`: fetch a public supported-forge repository and report declared permissions, min/target SDK levels, hardware features, application flags, selected analytics/advertising/crash SDK declarations and XML-parsed manifest security findings.
 - `GET /api/v1/apps/{app_id}/inspection`: return the latest cached inspection report, including its source commit SHA.
 - `POST /api/v1/remixes`: create an owner-scoped planning session pinned to the app's current indexed commit.
 - `GET /api/v1/remixes`: list the authenticated user's remix sessions.
@@ -66,7 +62,7 @@ Health: http://localhost:8000/health
 
 ## Background indexing, refresh and reconciliation
 
-The API enqueues jobs in Redis using Arq; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled. Each successful indexing pass also stores a commit-keyed static inspection report. When an AI provider is configured, the worker adds a short evidence-constrained explanation; provider errors do not discard deterministic findings or fail repository indexing.
+The API enqueues jobs in Redis using Arq. Public repository metadata and bounded source snapshots (up to 60 selected Android source/configuration files and 12 MB total per repository) are supported from GitHub, GitLab.com (including nested group paths), and Codeberg. Optional `GITLAB_TOKEN` and `CODEBERG_TOKEN` values can be configured to improve authenticated API rate limits. GitHub webhook ingestion remains GitHub-specific, and source-pinned patch validation/build artifacts are not yet available for GitLab or Codeberg repositories; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled. Each successful indexing pass also stores a commit-keyed static inspection report. When an AI provider is configured, the worker adds a short evidence-constrained explanation; provider errors do not discard deterministic findings or fail repository indexing.
 
 The same worker runs a scheduled reconciliation every 15 minutes and once at startup. It:
 
@@ -110,3 +106,8 @@ No source files are modified. No repository code, Gradle task, shell command or 
 Migration `009_remix_patch_proposals.sql` stores structured AI-authored patch drafts under the owner-scoped remix session. Every proposal is pinned to the session's base commit SHA and records the indexed Git blob hashes for the affected files. The generator is restricted to the indexed path allowlist, accepts only bounded unified diffs with matching file headers and hunks, rejects traversal/absolute paths, duplicate paths, binary patches and oversized responses, and never accepts new/deleted/renamed files. Indexing fetches the tree and raw files from the same captured commit SHA so branch movement cannot mix snapshots.
 
 Proposal review states are `proposed` → `approved` or `rejected`; validation states are `review_only`, `applicable` or `invalid`. Review transitions are owner-scoped and can occur only once. Migration `010_remix_patch_validation.sql` stores the validation report. The validation endpoint retrieves the Git commit and recursive tree, confirms every affected path points to the indexed Git blob SHA, downloads each complete blob (maximum 1 MB per file), recomputes the canonical Git blob SHA-1, requires UTF-8 text, and checks each unified-diff hunk against the exact source lines in memory. It rejects stale revisions, mismatched context and no-op diffs. **Approval is available only after validation succeeds; it is still an acknowledgement for human review and does not apply patches, write to GitHub, modify a checkout, run commands or build an APK.** Validation is not compilation or runtime testing. The processing endpoint is a separate explicit action after human approval. It writes only into a fresh disposable workspace and returns a ZIP containing changed files plus a provenance manifest; it never changes the original repository or source revision. The artifact is review-only and does not represent a complete checkout or a successful build.
+
+
+## Observability
+
+Every HTTP request receives a validated or generated `X-Request-ID` response header. Request logs are emitted as structured JSON with the request ID, route template, method, status and duration; authorization headers and request bodies are never logged. Prometheus request counters and latency histograms are collected with bounded route labels. The `/metrics` endpoint is disabled by default and can be enabled with `METRICS_ENABLED=true`; only enable it when the API is reachable through a private monitoring network.

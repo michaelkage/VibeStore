@@ -1,3 +1,6 @@
+import hashlib
+import secrets
+
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -71,3 +74,13 @@ async def get_current_user(
     if user is None:
         raise unauthorized
     return dict(user)
+
+
+
+def create_refresh_token() -> tuple[str, str]:
+    token = secrets.token_urlsafe(48)
+    return token, hash_refresh_token(token)
+
+
+def hash_refresh_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

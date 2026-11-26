@@ -25,7 +25,7 @@ def test_ignores_sdk_mentions_outside_build_files():
 
 
 def test_manifest_flags_include_line_level_evidence():
-    manifest = """<manifest>
+    manifest = """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:usesCleartextTraffic="true">
       <activity android:name=".MainActivity" android:exported="true" />
     </application>
@@ -33,3 +33,26 @@ def test_manifest_flags_include_line_level_evidence():
     findings = inspect_manifest_flags(manifest, "app/src/main/AndroidManifest.xml")
     assert [item["category"] for item in findings] == ["network_security", "component_exposure"]
     assert all(item["file_path"] == "app/src/main/AndroidManifest.xml" for item in findings)
+
+
+
+def test_manifest_flags_detect_debug_backup_and_exported_components():
+    manifest = """<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+      <application android:debuggable="true" android:allowBackup="true">
+        <activity
+          android:name=".ExposedActivity"
+          android:exported="true" />
+        <service android:name=".ProtectedService"
+          android:exported="true"
+          android:permission="dev.demo.ACCESS" />
+      </application>
+    </manifest>"""
+    findings = inspect_manifest_flags(manifest, "app/src/main/AndroidManifest.xml")
+
+    assert [item["category"] for item in findings] == [
+        "build_configuration",
+        "data_protection",
+        "component_exposure",
+    ]
+    assert findings[-1]["evidence"].startswith("activity .ExposedActivity")
+    assert findings[-1]["line_number"] == 4

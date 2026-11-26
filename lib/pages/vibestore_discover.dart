@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:file_picker/file_picker.dart';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:obtainium/services/vibestore_api.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -20,11 +22,22 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _queryController = TextEditingController();
+  final _minimumStarsController = TextEditingController();
+  final _fileQueryController = TextEditingController();
+  String _searchLicense = 'any';
   final _repositoryController = TextEditingController();
   final _remixPromptController = TextEditingController();
 
   VibeStoreApi? _api;
   List<Map<String, dynamic>> _results = [];
+  List<Map<String, dynamic>> _catalog = [];
+  List<Map<String, dynamic>> _library = [];
+  final Set<String> _favoriteIds = {};
+  List<Map<String, dynamic>> _repositoryFiles = [];
+  int _repositoryFileTotal = 0;
+  final Set<String> _selectedSourcePaths = {};
+  int _catalogTotal = 0;
+  String _catalogSort = 'popular';
   List<Map<String, dynamic>> _submissions = [];
   List<Map<String, dynamic>> _remixSessions = [];
   List<Map<String, dynamic>> _remixProposals = [];
@@ -34,6 +47,12 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   String? _error;
   bool _initializing = true;
   bool _busy = false;
+
+  bool _supportsPatchRemix(Map<String, dynamic> app) {
+    final repository = Uri.tryParse(app['repository_url']?.toString() ?? '');
+    return repository?.scheme == 'https' &&
+        repository?.host.toLowerCase() == 'github.com';
+  }
 
   Future<void> _openWebsite() async {
     try {
@@ -69,6 +88,25 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         _baseUrlController.text = api.baseUrl;
         _initializing = false;
       });
+      if (api.baseUrl.isNotEmpty && api.isAuthenticated) {
+        try {
+          final items = await api.myLibrary();
+          if (mounted) {
+            setState(() {
+              _library = items;
+              _favoriteIds
+                ..clear()
+                ..addAll(
+                  items
+                      .where((item) => item['favorited_at'] != null)
+                      .map((item) => item['id'].toString()),
+                );
+            });
+          }
+        } on VibeStoreApiException {
+          // The discovery screen remains available if the library cannot load.
+        }
+      }
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -85,6 +123,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     _emailController.dispose();
     _passwordController.dispose();
     _queryController.dispose();
+    _minimumStarsController.dispose();
+    _fileQueryController.dispose();
     _repositoryController.dispose();
     _remixPromptController.dispose();
     super.dispose();
@@ -112,6 +152,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _results = [];
       _inspection = null;
       _submissions = [];
+      _library = [];
+      _favoriteIds.clear();
       _notice = 'API address saved. Sign in to index repositories.';
     });
   });
@@ -122,16 +164,91 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     final user = createAccount
         ? await api.register(_emailController.text, _passwordController.text)
         : await api.login(_emailController.text, _passwordController.text);
+    final library = await api.myLibrary();
     if (!mounted) return;
     setState(() {
       _passwordController.clear();
+      _library = library;
+      _favoriteIds
+        ..clear()
+        ..addAll(
+          library
+              .where((item) => item['favorited_at'] != null)
+              .map((item) => item['id'].toString()),
+        );
       _notice = 'Signed in as ${user['email']}.';
+    });
+  });
+
+  Future<void> _loadLibrary() => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final items = await _api!.myLibrary();
+    if (!mounted) return;
+    setState(() {
+      _library = items;
+      _favoriteIds
+        ..clear()
+        ..addAll(
+          items
+              .where((item) => item['favorited_at'] != null)
+              .map((item) => item['id'].toString()),
+        );
+      _notice = 'Loaded ${items.length} apps in your library.';
+    });
+  });
+
+  Future<void> _toggleFavorite(Map<String, dynamic> app) => _run(() async {
+    final appId = app['id'].toString();
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    if (_favoriteIds.contains(appId)) {
+      await _api!.unfavoriteApp(appId);
+    } else {
+      await _api!.favoriteApp(appId);
+    }
+    final items = await _api!.myLibrary();
+    if (!mounted) return;
+    setState(() {
+      _library = items;
+      _favoriteIds
+        ..clear()
+        ..addAll(
+          items
+              .where((item) => item['favorited_at'] != null)
+              .map((item) => item['id'].toString()),
+        );
+    });
+  });
+
+  Future<void> _loadCatalog() => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final response = await _api!.catalog(sort: _catalogSort);
+    if (!mounted) return;
+    final items = response['items'] as List;
+    setState(() {
+      _catalog = items
+          .map((value) => Map<String, dynamic>.from(value as Map))
+          .toList(growable: false);
+      _catalogTotal = response['total'] as int? ?? _catalog.length;
+      _notice = 'Showing ${_catalog.length} of $_catalogTotal catalog apps.';
     });
   });
 
   Future<void> _search() => _run(() async {
     await _api!.configureBaseUrl(_baseUrlController.text);
-    final results = await _api!.search(_queryController.text);
+    final minimumStarsText = _minimumStarsController.text.trim();
+    final minimumStars = minimumStarsText.isEmpty
+        ? null
+        : int.tryParse(minimumStarsText);
+    if (minimumStarsText.isNotEmpty && minimumStars == null) {
+      throw const VibeStoreApiException(
+        'Minimum stars must be a whole number.',
+      );
+    }
+    final results = await _api!.search(
+      _queryController.text,
+      license: _searchLicense == 'any' ? null : _searchLicense,
+      minStars: minimumStars,
+    );
     if (!mounted) return;
     setState(() {
       _results = results;
@@ -229,6 +346,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _activeRemix = session;
       _remixSessions = sessions;
       _remixProposals = [];
+      _repositoryFiles = [];
+      _repositoryFileTotal = 0;
+      _selectedSourcePaths.clear();
       _remixPromptController.clear();
       _notice =
           'Remix session created for $appName at commit ${session['source_commit_sha']}.';
@@ -243,7 +363,38 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     setState(() {
       _activeRemix = session;
       _remixProposals = proposals;
+      _repositoryFiles = [];
+      _repositoryFileTotal = 0;
+      _selectedSourcePaths.clear();
       _notice = 'Opened remix session: ${session['title']}.';
+    });
+  });
+
+  Future<void> _loadRemixFiles() => _run(() async {
+    final active = _activeRemix;
+    if (active == null) return;
+    final appId = active['app_id']?.toString();
+    if (appId == null || appId.isEmpty) {
+      throw const VibeStoreApiException(
+        'The active remix does not identify its source application.',
+      );
+    }
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final response = await _api!.repositoryFiles(
+      appId,
+      query: _fileQueryController.text,
+      limit: 50,
+    );
+    if (!mounted) return;
+    final items = response['items'] as List;
+    setState(() {
+      _repositoryFiles = items
+          .map((value) => Map<String, dynamic>.from(value as Map))
+          .toList(growable: false);
+      _repositoryFileTotal =
+          response['total'] as int? ?? _repositoryFiles.length;
+      _notice =
+          'Loaded ${_repositoryFiles.length} of $_repositoryFileTotal indexed source files.';
     });
   });
 
@@ -256,7 +407,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       );
     }
     await _api!.configureBaseUrl(_baseUrlController.text);
-    await _api!.sendRemixMessage(active['id'].toString(), prompt);
+    await _api!.sendRemixMessage(
+      active['id'].toString(),
+      prompt,
+      contextPaths: _selectedSourcePaths.toList(),
+    );
     final session = await _api!.remixSession(active['id'].toString());
     if (!mounted) return;
     setState(() {
@@ -276,7 +431,11 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       );
     }
     await _api!.configureBaseUrl(_baseUrlController.text);
-    await _api!.generateRemixPatchProposal(active['id'].toString(), prompt);
+    await _api!.generateRemixPatchProposal(
+      active['id'].toString(),
+      prompt,
+      contextPaths: _selectedSourcePaths.take(12).toList(),
+    );
     final proposals = await _api!.remixPatchProposals(active['id'].toString());
     if (!mounted) return;
     setState(() {
@@ -327,6 +486,50 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
         });
       });
 
+  Future<void> _processApprovedProposal(String proposalId) => _run(() async {
+    final active = _activeRemix;
+    if (active == null) return;
+    final remixId = active['id'].toString();
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    await _api!.processApprovedPatch(remixId, proposalId);
+    for (var attempt = 0; attempt < 60; attempt++) {
+      await Future.delayed(const Duration(seconds: 2));
+      if (!mounted) return;
+      final response = await _api!.patchArtifact(remixId, proposalId);
+      if (response.headers['content-type']?.contains('application/zip') ??
+          false) {
+        final savedPath = await FilePicker.saveFile(
+          fileName: 'vibestore-patch-$proposalId.zip',
+          bytes: response.bodyBytes,
+        );
+        if (!mounted) return;
+        setState(() {
+          _notice = savedPath == null
+              ? 'Source ZIP is ready; saving was cancelled.'
+              : 'Review-only source ZIP saved to $savedPath';
+        });
+        return;
+      }
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      final status = decoded is Map
+          ? decoded['status']?.toString() ?? 'processing'
+          : 'processing';
+      if (status == 'failed') {
+        throw VibeStoreApiException(
+          decoded is Map
+              ? decoded['error']?.toString() ?? 'Patch processing failed.'
+              : 'Patch processing failed.',
+        );
+      }
+      if (mounted) {
+        setState(() => _notice = 'Preparing changed-source ZIP… $status');
+      }
+    }
+    throw const VibeStoreApiException(
+      'Source ZIP preparation is still running. Reopen the proposal and try again shortly.',
+    );
+  });
+
   Future<void> _removeSubmission(String appId, String name) => _run(() async {
     await _api!.removeMyRepository(appId);
     final repositories = await _api!.myRepositories();
@@ -362,8 +565,18 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       });
 
   Future<void> _logout() async {
-    _api?.logout();
-    if (mounted) setState(() => _notice = 'Signed out.');
+    await _api?.logout();
+    if (mounted) {
+      setState(() {
+        _library = [];
+        _favoriteIds.clear();
+        _repositoryFiles = [];
+        _selectedSourcePaths.clear();
+        _activeRemix = null;
+        _remixProposals = [];
+        _notice = 'Signed out.';
+      });
+    }
   }
 
   Widget _section(String title, IconData icon, List<Widget> children) {
@@ -506,7 +719,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                   Text(
                     api.isAuthenticated
                         ? 'Authenticated. Repository indexing is enabled.'
-                        : 'Sign in to submit repositories. Your access token stays in memory and is not written to preferences.',
+                        : 'Sign in to submit repositories. Your access token is stored using platform secure storage.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ]),
@@ -558,11 +771,162 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         isThreeLine: true,
                       ),
                 ]),
+                _section('App catalog', Icons.apps_rounded, [
+                  Row(
+                    children: [
+                      const Text('Sort by'),
+                      const SizedBox(width: 12),
+                      DropdownButton<String>(
+                        value: _catalogSort,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'popular',
+                            child: Text('Most popular'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'recent',
+                            child: Text('Recently indexed'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'name',
+                            child: Text('Name A–Z'),
+                          ),
+                        ],
+                        onChanged: _busy
+                            ? null
+                            : (value) async {
+                                if (value == null) return;
+                                setState(() => _catalogSort = value);
+                                await _loadCatalog();
+                              },
+                      ),
+                      const Spacer(),
+                      FilledButton.tonalIcon(
+                        onPressed: _busy ? null : _loadCatalog,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Browse'),
+                      ),
+                    ],
+                  ),
+                  if (_catalog.isEmpty)
+                    const Text(
+                      'Browse the indexed open-source Android app catalog.',
+                    )
+                  else ...[
+                    Text('$_catalogTotal apps in the catalog'),
+                    const Divider(height: 16),
+                    for (final app in _catalog)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        onTap: _busy
+                            ? null
+                            : () async {
+                                if (api.isAuthenticated) {
+                                  await _api!.recordAppOpened(
+                                    app['id'].toString(),
+                                  );
+                                }
+                                await _loadCachedInspection(
+                                  app['id'].toString(),
+                                  app['name']?.toString() ?? 'app',
+                                );
+                              },
+                        title: Text(app['name']?.toString() ?? 'Unnamed app'),
+                        subtitle: Text(
+                          [
+                            app['description']?.toString() ?? '',
+                            if (app['license'] != null)
+                              'License: ${app['license']}',
+                            app['repository_url']?.toString() ?? '',
+                          ].where((value) => value.isNotEmpty).join(' · '),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text('★ ${app['stars'] ?? 0}'),
+                            if (api.isAuthenticated)
+                              IconButton(
+                                tooltip:
+                                    _favoriteIds.contains(app['id'].toString())
+                                    ? 'Remove from library'
+                                    : 'Add to library',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _toggleFavorite(app),
+                                icon: Icon(
+                                  _favoriteIds.contains(app['id'].toString())
+                                      ? Icons.bookmark
+                                      : Icons.bookmark_border,
+                                ),
+                              ),
+                            if (api.isAuthenticated && _supportsPatchRemix(app))
+                              IconButton(
+                                tooltip: 'Start a remix',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _createRemix(
+                                        app['id'].toString(),
+                                        app['name']?.toString() ?? 'app',
+                                      ),
+                                icon: const Icon(Icons.auto_awesome_rounded),
+                              ),
+                          ],
+                        ),
+                        isThreeLine: true,
+                      ),
+                  ],
+                ]),
                 _section('Discover apps', Icons.travel_explore_rounded, [
                   _textField(
                     _queryController,
                     'Describe what you are looking for',
                     hint: 'A private notes app with offline sync',
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _searchLicense,
+                          decoration: const InputDecoration(
+                            labelText: 'License',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'any',
+                              child: Text('Any license'),
+                            ),
+                            DropdownMenuItem(value: 'MIT', child: Text('MIT')),
+                            DropdownMenuItem(
+                              value: 'Apache-2.0',
+                              child: Text('Apache-2.0'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'GPL-3.0',
+                              child: Text('GPL-3.0'),
+                            ),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    setState(() => _searchLicense = value);
+                                  }
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _textField(
+                          _minimumStarsController,
+                          'Minimum stars',
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Align(
@@ -596,7 +960,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         trailing: Wrap(
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            if (api.isAuthenticated)
+                            if (api.isAuthenticated &&
+                                _supportsPatchRemix(result))
                               IconButton(
                                 tooltip: 'Start a remix',
                                 onPressed: _busy
@@ -615,6 +980,72 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         ),
                         isThreeLine: true,
                       ),
+                  ],
+                ]),
+                _section('My library', Icons.bookmarks_rounded, [
+                  if (!api.isAuthenticated)
+                    const Text('Sign in to save favorites and recent apps.')
+                  else ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '${_library.length} saved or recently opened apps',
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Refresh library',
+                          onPressed: _busy ? null : _loadLibrary,
+                          icon: const Icon(Icons.refresh_rounded),
+                        ),
+                      ],
+                    ),
+                    if (_library.isEmpty)
+                      const Text(
+                        'Bookmark apps from the catalog to build your library.',
+                      )
+                    else
+                      for (final app in _library)
+                        ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(app['name']?.toString() ?? 'App'),
+                          subtitle: Text(
+                            [
+                              if (app['favorited_at'] != null) 'Favorite',
+                              if (app['last_opened_at'] != null)
+                                'Recently opened',
+                              app['license']?.toString() ?? '',
+                            ].where((value) => value.isNotEmpty).join(' · '),
+                          ),
+                          leading: const Icon(Icons.android_rounded),
+                          trailing: IconButton(
+                            tooltip: _favoriteIds.contains(app['id'].toString())
+                                ? 'Remove favorite'
+                                : 'Add to favorites',
+                            onPressed: _busy
+                                ? null
+                                : () => _toggleFavorite(app),
+                            icon: Icon(
+                              _favoriteIds.contains(app['id'].toString())
+                                  ? Icons.bookmark_remove_outlined
+                                  : Icons.bookmark_add_outlined,
+                            ),
+                          ),
+                          onTap: _busy
+                              ? null
+                              : () async {
+                                  await _api!.configureBaseUrl(
+                                    _baseUrlController.text,
+                                  );
+                                  await _api!.recordAppOpened(
+                                    app['id'].toString(),
+                                  );
+                                  await _loadCachedInspection(
+                                    app['id'].toString(),
+                                    app['name']?.toString() ?? 'app',
+                                  );
+                                },
+                        ),
                   ],
                 ]),
                 _section('Remix Studio', Icons.auto_awesome_rounded, [
@@ -664,6 +1095,64 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         '${active['app_name'] ?? 'App'} · pinned to ${active['source_commit_sha'] ?? 'unknown commit'}',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          const Expanded(child: Text('Indexed source files')),
+                          Text(
+                            '$_repositoryFileTotal files · ${_selectedSourcePaths.length} selected',
+                          ),
+                          IconButton(
+                            tooltip: 'Load indexed source files',
+                            onPressed: _busy ? null : _loadRemixFiles,
+                            icon: const Icon(Icons.folder_open_rounded),
+                          ),
+                        ],
+                      ),
+                      _textField(
+                        _fileQueryController,
+                        'Filter source paths',
+                        hint: 'MainActivity, AndroidManifest, build.gradle',
+                      ),
+                      if (_repositoryFiles.isNotEmpty) ...[
+                        for (final file in _repositoryFiles)
+                          ExpansionTile(
+                            tilePadding: EdgeInsets.zero,
+                            leading: Checkbox(
+                              value: _selectedSourcePaths.contains(
+                                file['path']?.toString() ?? '',
+                              ),
+                              onChanged: _busy
+                                  ? null
+                                  : (selected) {
+                                      final path =
+                                          file['path']?.toString() ?? '';
+                                      setState(() {
+                                        if (selected == true) {
+                                          _selectedSourcePaths.add(path);
+                                        } else {
+                                          _selectedSourcePaths.remove(path);
+                                        }
+                                      });
+                                    },
+                            ),
+                            title: Text(
+                              file['path']?.toString() ?? 'Source file',
+                            ),
+                            subtitle: Text(
+                              '${file['language'] ?? 'source'} · ${file['content_sha']?.toString().substring(0, 10) ?? 'unknown'}',
+                            ),
+                            children: [
+                              SelectableText(
+                                file['content_excerpt']?.toString() ?? '',
+                                style: const TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
                       const SizedBox(height: 12),
                       for (final message
                           in (active['messages'] as List? ?? const []))
@@ -858,6 +1347,21 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                         ),
                                       ],
                                     ),
+                                  if (proposal['status'] == 'approved')
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _busy
+                                            ? null
+                                            : () => _processApprovedProposal(
+                                                proposal['id'].toString(),
+                                              ),
+                                        icon: const Icon(
+                                          Icons.archive_outlined,
+                                        ),
+                                        label: const Text('Prepare source ZIP'),
+                                      ),
+                                    ),
                                   if (proposal['status'] == 'proposed')
                                     Wrap(
                                       spacing: 8,
@@ -929,11 +1433,12 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : _generatePatchProposal,
-                            icon: const Icon(Icons.difference_outlined),
-                            label: const Text('Draft source diff'),
-                          ),
+                          if (_supportsPatchRemix(active))
+                            OutlinedButton.icon(
+                              onPressed: _busy ? null : _generatePatchProposal,
+                              icon: const Icon(Icons.difference_outlined),
+                              label: const Text('Draft source diff'),
+                            ),
                           FilledButton.icon(
                             onPressed: _busy ? null : _sendRemixMessage,
                             icon: const Icon(Icons.auto_awesome_rounded),
@@ -943,12 +1448,14 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Patch drafts are review-only. Approving records your decision; it does not edit files or run a build.',
+                        _supportsPatchRemix(active)
+                            ? 'Patch drafts are review-only. Approving records your decision; it does not edit files or run a build.'
+                            : 'AI change plans are available for this source. Source patch generation is currently limited to GitHub repositories.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Planning only: no source files are edited and no code or APK is executed or built.',
+                        'Approved diffs can be materialized into a review-only changed-source ZIP. This is not a complete checkout and does not run Gradle or produce an APK.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
@@ -960,8 +1467,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                   [
                     _textField(
                       _repositoryController,
-                      'Public GitHub repository URL',
-                      hint: 'https://github.com/owner/repository',
+                      'Public repository URL',
+                      hint: 'GitHub, GitLab.com or Codeberg repository URL',
                       keyboardType: TextInputType.url,
                     ),
                     const SizedBox(height: 12),

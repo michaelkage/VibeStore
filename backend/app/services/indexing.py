@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.openai_compatible import get_ai_provider
 from app.config import get_settings
-from app.services.github import fetch_repository_snapshot
+from app.services.repository_sources import fetch_repository_snapshot
 from app.services.inspection import create_inspection_report
 
 
@@ -99,7 +99,17 @@ async def index_repository_snapshot(
     )
     for item in snapshot["files"]:
         suffix = item["path"].rsplit(".", 1)[-1].lower() if "." in item["path"] else ""
-        language = {"xml": "xml", "md": "markdown", "gradle": "gradle", "kts": "kotlin"}.get(suffix)
+        language = {
+            "xml": "xml",
+            "md": "markdown",
+            "gradle": "gradle",
+            "kts": "kotlin",
+            "kt": "kotlin",
+            "java": "java",
+            "toml": "toml",
+            "pro": "proguard",
+            "properties": "properties",
+        }.get(suffix)
         await session.execute(
             text("""
                 INSERT INTO repository_files (

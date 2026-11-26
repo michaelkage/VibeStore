@@ -1,95 +1,47 @@
-<!-- <div align="center"><a href="https://github.com/Safouene1/support-palestine-banner/blob/master/Markdown-pages/Support.md"><img src="https://raw.githubusercontent.com/Safouene1/support-palestine-banner/master/banner-support.svg" alt="Support Palestine" style="width: 100%;"></a></div> -->
-<!-- Banner temporarily removed for reasons, will re-enable or replace shortly -->
+# VibeStore
 
-# ![Obtainium Icon](./assets/graphics/icon_small.png) Obtainium
+**An AI-native open-source Android app store. Discover apps by intent, inspect how they work, and remix their source with AI.**
 
-Get Android app updates straight from the source.
+VibeStore combines an Android application discovery experience with repository intelligence and a prompt-first modification workflow. Its long-term product direction is an AI-first F-Droid meets GitHub: users discover open-source Android apps, inspect permissions and architecture, request source changes conversationally, and ultimately build, sign, install and update their own variants.
 
-Obtainium allows you to install and update apps directly from their releases pages, and receive notifications when new releases are made available.
+## Product workflows
 
-More info:
-- [Obtainium Wiki](https://wiki.obtainium.imranr.dev/) ([repository](https://github.com/ImranR98/Obtainium-Wiki))
-- [Deep Links](https://wiki.obtainium.imranr.dev/deep_links/) - link straight to an import, or add a badge to your own project
-- [Obtainium 101](https://www.youtube.com/watch?v=0MF_v2OBncw) - Tutorial video
-- ["Verified Apps"](https://github.com/privacyguides/verified-apps-android) - App verification tool (recommended, integrates with Obtainium)
-- [apps.obtainium.imranr.dev](https://apps.obtainium.imranr.dev/) - Crowdsourced app configurations ([repository](https://github.com/ImranR98/apps.obtainium.imranr.dev))
-- [Side Of Burritos - You should use this instead of F-Droid | How to use app RSS feed](https://youtu.be/FFz57zNR_M0) - Original motivation for this app
-- [Website](https://obtainium.imranr.dev) ([repository](https://github.com/ImranR98/obtainium.imranr.dev))
+- **Discover:** search an open-source Android catalog using app names, features or natural-language intent.
+- **Inspect & X-Ray:** review Android manifest permissions, declared SDKs, manifest security indicators and repository architecture, with evidence and limitations.
+- **Fork & Vibe:** create a remix session pinned to a source commit, ask for a change plan, generate reviewable unified diffs, validate them against exact source blobs, and approve or reject proposals.
+- **Build and distribute (in progress):** isolated Gradle builds, signing, APK delivery and generated-app update management are planned platform capabilities. The current patch worker materializes approved changed source files into a review-only ZIP; it does not execute repository code or build APKs.
 
-Currently supported App sources:
-- Open Source - General:
-  - [GitHub](https://github.com/)
-  - [GitLab](https://gitlab.com/)
-  - [Forgejo](https://forgejo.org/) ([Codeberg](https://codeberg.org/))
-  - [F-Droid](https://f-droid.org/)
-  - Third Party F-Droid Repos
-  - [IzzyOnDroid](https://android.izzysoft.de/)
-  - [SourceHut](https://git.sr.ht/)
-- Other - General:
-  - [APKPure](https://apkpure.net/)
-  - [Aptoide](https://aptoide.com/)
-  - [Uptodown](https://uptodown.com/)
-  - [itch.io](https://itch.io/)
-  - [Huawei AppGallery](https://appgallery.huawei.com/)
-  - [Tencent App Store](https://sj.qq.com/)
-  - [vivo App Store (CN)](https://h5.appstore.vivo.com.cn/)
-  - [RuStore](https://rustore.ru/)
-  - [Farsroid](https://www.farsroid.com)
-  - [Samsung Galaxy Store](https://galaxystore.samsung.com/)
-  - [LiteAPKs](https://liteapks.com/)
-  - [APK4Free](https://apk4free.net/)
-  - [CoolApk](https://coolapk.com/)
-  - [SourceForge](https://sourceforge.net/)
-  - Jenkins Jobs
-  - [APKMirror](https://apkmirror.com/) *(Track-Only)*
-  - [RockMods](https://rockmods.net/) *(Track-Only)*
-- Other - App-Specific:
-  - [Telegram App](https://telegram.org/)
-  - [Neutron Code](https://neutroncode.com/)
-- Direct APK Link
-- "HTML" (Fallback): Any other URL that returns an HTML page with links to APK files
+## Repository layout
 
-## Finding App Configurations
+- `lib/`: Flutter Android application and VibeStore discovery/remix UI.
+- `backend/`: FastAPI service, PostgreSQL/pgvector persistence, Redis/Arq workers and migrations.
+- `docs/`: contributor and developer documentation.
+- `.github/workflows/`: backend and Flutter CI workflows.
 
-You can find crowdsourced app configurations at [apps.obtainium.imranr.dev](https://apps.obtainium.imranr.dev).
+## Website
 
-If you can't find the configuration for an app you want, feel free to leave a request on the [issues page](https://github.com/ImranR98/apps.obtainium.imranr.dev/issues).
+[ VibeStore website ](https://michaelkage.github.io/VibeStore/)
 
-Or, contribute some configurations to the website by creating a PR at [this repo](https://github.com/ImranR98/apps.obtainium.imranr.dev).
+## Backend development
 
-## Installation
+See [backend/README.md](backend/README.md) for environment configuration, migrations, API routes, worker architecture and security boundaries.
 
-[<img src="https://github.com/machiav3lli/oandbackupx/blob/034b226cea5c1b30eb4f6a6f313e4dadcbb0ece4/badge_github.png"
-    alt="Get it on GitHub"
-    height="80">](https://github.com/ImranR98/Obtainium/releases)
-[<img src="https://gitlab.com/IzzyOnDroid/repo/-/raw/master/assets/IzzyOnDroid.png"
-     alt="Get it on IzzyOnDroid"
-     height="80">](https://apt.izzysoft.de/fdroid/index/apk/dev.imranr.obtainium)
-[<img src="https://fdroid.gitlab.io/artwork/badge/get-it-on.png"
-    alt="Get it on F-Droid"
-    height="80">](https://f-droid.org/packages/dev.imranr.obtainium.fdroid/)
-     
-Verification info:
+## Flutter development
 
-- Package name: `dev.imranr.obtainium`
-- SHA-256 hash of signing certificate:
-  ```text
-  B3:53:60:1F:6A:1D:5F:D6:60:3A:E2:F5:0B:E8:0C:F3:01:36:7B:86:B6:AB:8B:1F:66:24:3D:A9:6C:D5:73:62
-  ```
-  - Note: The above signature is also valid for the F-Droid flavour of Obtainium, thanks to [reproducible builds](https://f-droid.org/docs/Reproducible_Builds/).
-- PGP Public Key (to verify APK hashes): [pgp-public-key.asc](pgp-public-key.asc)
-  - Fingerprint: `8E27 EC48 A4FE 21C7 1055 E2E3 C4EB 2B69 C138 EBEA`
-  - Also available via [GitHub](https://github.com/ImranR98.gpg) and [keyserver.ubuntu.com](https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x8e27ec48a4fe21c71055e2e3c4eb2b69c138ebea)
+The Android client is a Flutter application. Install Flutter using the official [Flutter documentation](https://docs.flutter.dev/get-started/install), then run:
 
-## Contributing / Developing
+```bash
+flutter pub get
+flutter analyze
+flutter test
+```
 
-Please see the pertinent documentation, [on contributing](docs/CONTRIBUTING.md) and [the developer guide](docs/DEVELOPER_GUIDE.md) (architecture description).
+## Project status
 
-## Limitations
-- For some sources, data is gathered using Web scraping and can easily break due to changes in website design. In such cases, more reliable methods may be unavailable.
+The repository currently includes bounded GitHub, GitLab.com and Codeberg indexing of Android manifests, build configuration and selected Kotlin/Java/XML source files; paginated catalog browsing; license/popularity-filtered lexical and semantic search; richer static X-Ray reports; selectable source context in Remix Studio; personal favorites and recent-app library; rotating refresh-token sessions; source-pinned GitHub patch proposals; exact-source diff validation; and isolated review-only source artifact generation.
 
-## Screenshots
+It does **not** yet provide arbitrary repository Gradle execution, APK signing, APK distribution or generated-app update feeds. Those capabilities must be implemented as separate, isolated services; the API process must never execute untrusted repository code or hold user signing keys.
 
-| <img src="./assets/screenshots/1.apps.png" alt="Apps Page" /> | <img src="./assets/screenshots/2.dark_theme.png" alt="Dark Theme" />           | <img src="./assets/screenshots/3.material_you.png" alt="Material You" />    |
-| ------------------------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| <img src="./assets/screenshots/4.app.png" alt="App Page" />   | <img src="./assets/screenshots/5.app_opts.png" alt="App Options" /> | <img src="./assets/screenshots/6.app_webview.png" alt="App Web View" /> |
+## License
+
+This project is licensed under the GNU General Public License v3.0. See [LICENSE](LICENSE).

@@ -12,10 +12,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:3000"
     github_token: str | None = None
+    gitlab_token: str | None = None
+    codeberg_token: str | None = None
     github_webhook_secret: str = ""
     jwt_secret_key: str = ""
     jwt_issuer: str = "vibestore-api"
     jwt_access_token_minutes: int = Field(default=30, ge=5, le=1440)
+    jwt_refresh_token_days: int = Field(default=30, ge=1, le=90)
     catalog_refresh_interval_days: int = Field(default=7, ge=1, le=90)
     catalog_refresh_batch_size: int = Field(default=50, ge=1, le=500)
     indexing_reconcile_batch_size: int = Field(default=100, ge=1, le=1000)
@@ -25,6 +28,9 @@ class Settings(BaseSettings):
     ai_api_key: str | None = None
     ai_model: str | None = None
     ai_embedding_model: str | None = None
+    ai_request_timeout_seconds: int = Field(default=90, ge=5, le=300)
+    ai_max_retries: int = Field(default=2, ge=0, le=5)
+    metrics_enabled: bool = False
 
     @property
     def allowed_origins(self) -> list[str]:

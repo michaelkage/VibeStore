@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class VibeStoreApiException implements Exception {
   const VibeStoreApiException(this.message, {this.statusCode});
@@ -17,28 +18,39 @@ class VibeStoreApiException implements Exception {
 class VibeStoreApi {
   VibeStoreApi._({
     required this._preferences,
+    required this._secureStorage,
     required this._client,
     required this._baseUrl,
   });
 
   static const _baseUrlKey = 'vibestore.api.baseUrl';
+  static const _accessTokenKey = 'vibestore.auth.accessToken';
+  static const _refreshTokenKey = 'vibestore.auth.refreshToken';
   static const _timeout = Duration(seconds: 30);
 
   final SharedPreferences _preferences;
+  final FlutterSecureStorage _secureStorage;
   final http.Client _client;
   String _baseUrl;
   String? _accessToken;
+  String? _refreshToken;
 
   String get baseUrl => _baseUrl;
   bool get isAuthenticated => _accessToken != null;
 
   static Future<VibeStoreApi> load() async {
     final preferences = await SharedPreferences.getInstance();
+    const secureStorage = FlutterSecureStorage();
+    final accessToken = await secureStorage.read(key: _accessTokenKey);
+    final refreshToken = await secureStorage.read(key: _refreshTokenKey);
     return VibeStoreApi._(
-      preferences: preferences,
-      client: http.Client(),
-      baseUrl: preferences.getString(_baseUrlKey) ?? '',
-    );
+        preferences: preferences,
+        secureStorage: secureStorage,
+        client: http.Client(),
+        baseUrl: preferences.getString(_baseUrlKey) ?? '',
+      )
+      .._accessToken = accessToken
+      .._refreshToken = refreshToken;
   }
 
   Future<void> configureBaseUrl(String value) async {
@@ -68,7 +80,7 @@ class VibeStoreApi {
     }
 
     if (normalized != _baseUrl) {
-      _accessToken = null;
+      await _clearTokens();
     }
     _baseUrl = normalized;
     await _preferences.setString(_baseUrlKey, normalized);
@@ -78,8 +90,8 @@ class VibeStoreApi {
     final response = await _post('auth/register', {
       'email': email.trim(),
       'password': password,
-    });
-    _saveToken(response);
+    }, allowRefresh: false);
+    await _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
   }
 
@@ -87,16 +99,44 @@ class VibeStoreApi {
     final response = await _post('auth/token', {
       'email': email.trim(),
       'password': password,
-    });
-    _saveToken(response);
+    }, allowRefresh: false);
+    await _saveToken(response);
     return Map<String, dynamic>.from(response['user'] as Map);
+  }
+
+  Future<Map<String, dynamic>> catalog({
+    String? query,
+    String sort = 'popular',
+    int limit = 24,
+    int offset = 0,
+  }) async {
+    final parameters = <String, String>{
+      'sort': sort,
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+    };
+    final response = await _get(
+      'catalog?${Uri(queryParameters: parameters).query}',
+    );
+    if (response is! Map<String, dynamic> || response['items'] is! List) {
+      throw const VibeStoreApiException('The catalog response was invalid.');
+    }
+    return response;
   }
 
   Future<List<Map<String, dynamic>>> search(
     String query, {
     int limit = 20,
+    String? license,
+    int? minStars,
   }) async {
-    final response = await _post('search', {'query': query, 'limit': limit});
+    final response = await _post('search', {
+      'query': query,
+      'limit': limit,
+      'license': license,
+      'min_stars': minStars,
+    });
     final items = response['items'];
     if (items is! List) {
       throw const VibeStoreApiException('The search response was invalid.');
@@ -106,18 +146,38 @@ class VibeStoreApi {
         .toList(growable: false);
   }
 
+  Future<List<Map<String, dynamic>>> myLibrary() async {
+    final response = await _get('library');
+    if (response is! Map<String, dynamic> || response['items'] is! List) {
+      throw const VibeStoreApiException('The library response was invalid.');
+    }
+    return (response['items'] as List)
+        .map((value) => Map<String, dynamic>.from(value as Map))
+        .toList(growable: false);
+  }
+
+  Future<void> favoriteApp(String appId) async {
+    final response = await _authorizedPut('library/$appId/favorite');
+    if (response.statusCode != 204) _decodeResponse(response);
+  }
+
+  Future<void> unfavoriteApp(String appId) async {
+    final response = await _authorizedDelete('library/$appId/favorite');
+    if (response.statusCode != 204) _decodeResponse(response);
+  }
+
+  Future<void> recordAppOpened(String appId) async {
+    final response = await _authorizedPost('library/$appId/open', const {});
+    if (response.statusCode != 204) _decodeResponse(response);
+  }
+
   Future<List<Map<String, dynamic>>> myRepositories() async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
         'Configure the VibeStore API address first.',
       );
     }
-    final response = await _client
-        .get(
-          Uri.parse('$_baseUrl/api/v1/repositories/mine'),
-          headers: _authorizedHeaders(),
-        )
-        .timeout(_timeout);
+    final response = await _authorizedGet('repositories/mine');
     final decoded = _decodeResponse(response);
     if (decoded is! List) {
       throw const VibeStoreApiException(
@@ -135,12 +195,7 @@ class VibeStoreApi {
         'Configure the VibeStore API address first.',
       );
     }
-    final response = await _client
-        .delete(
-          Uri.parse('$_baseUrl/api/v1/repositories/mine/$appId'),
-          headers: _authorizedHeaders(),
-        )
-        .timeout(_timeout);
+    final response = await _authorizedDelete('repositories/mine/$appId');
     if (response.statusCode == 204) return;
     _decodeResponse(response);
   }
@@ -183,12 +238,7 @@ class VibeStoreApi {
         'Configure the VibeStore API address first.',
       );
     }
-    final response = await _client
-        .get(
-          Uri.parse('$_baseUrl/api/v1/repositories/jobs/$jobId'),
-          headers: _authorizedHeaders(),
-        )
-        .timeout(_timeout);
+    final response = await _authorizedGet('repositories/jobs/$jobId');
     final decoded = _decodeResponse(response);
     if (decoded is! Map<String, dynamic>) {
       throw const VibeStoreApiException(
@@ -198,18 +248,35 @@ class VibeStoreApi {
     return decoded;
   }
 
+  Future<Map<String, dynamic>> repositoryFiles(
+    String appId, {
+    String? query,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final parameters = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+    };
+    final response = await _get(
+      'apps/$appId/files?${Uri(queryParameters: parameters).query}',
+    );
+    if (response is! Map<String, dynamic> || response['items'] is! List) {
+      throw const VibeStoreApiException(
+        'The repository file response was invalid.',
+      );
+    }
+    return response;
+  }
+
   Future<Map<String, dynamic>> cachedInspection(String appId) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
         'Configure the VibeStore API address first.',
       );
     }
-    final response = await _client
-        .get(
-          Uri.parse('$_baseUrl/api/v1/apps/$appId/inspection'),
-          headers: _authorizedHeaders(),
-        )
-        .timeout(_timeout);
+    final response = await _authorizedGet('apps/$appId/inspection');
     final decoded = _decodeResponse(response);
     if (decoded is! Map<String, dynamic>) {
       throw const VibeStoreApiException(
@@ -248,9 +315,11 @@ class VibeStoreApi {
 
   Future<Map<String, dynamic>> sendRemixMessage(
     String remixId,
-    String content,
-  ) => _post('remixes/$remixId/messages', {
+    String content, {
+    List<String> contextPaths = const [],
+  }) => _post('remixes/$remixId/messages', {
     'content': content.trim(),
+    'context_paths': contextPaths,
   }, timeout: const Duration(seconds: 110));
 
   Future<List<Map<String, dynamic>>> remixPatchProposals(String remixId) async {
@@ -267,9 +336,11 @@ class VibeStoreApi {
 
   Future<Map<String, dynamic>> generateRemixPatchProposal(
     String remixId,
-    String content,
-  ) => _post('remixes/$remixId/proposals', {
+    String content, {
+    List<String> contextPaths = const [],
+  }) => _post('remixes/$remixId/proposals', {
     'content': content.trim(),
+    'context_paths': contextPaths,
   }, timeout: const Duration(seconds: 110));
 
   Future<Map<String, dynamic>> validateRemixPatchProposal(
@@ -289,15 +360,49 @@ class VibeStoreApi {
     'decision': decision,
   });
 
+  Future<Map<String, dynamic>> processApprovedPatch(
+    String remixId,
+    String proposalId,
+  ) => _post(
+    'remixes/$remixId/proposals/$proposalId/process',
+    const {},
+    timeout: const Duration(seconds: 60),
+  );
+
+  Future<http.Response> patchArtifact(String remixId, String proposalId) async {
+    if (_baseUrl.isEmpty) {
+      throw const VibeStoreApiException(
+        'Configure the VibeStore API address first.',
+      );
+    }
+    final response = await _authorizedGet(
+      'remixes/$remixId/proposals/$proposalId/artifact',
+    );
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      dynamic decoded;
+      try {
+        decoded = jsonDecode(response.body);
+      } on FormatException {
+        decoded = null;
+      }
+      final detail = decoded is Map ? decoded['detail'] : null;
+      throw VibeStoreApiException(
+        detail is String
+            ? detail
+            : 'Patch artifact request failed (${response.statusCode}).',
+        statusCode: response.statusCode,
+      );
+    }
+    return response;
+  }
+
   Future<dynamic> _get(String path) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
         'Configure the VibeStore API address first.',
       );
     }
-    final response = await _client
-        .get(Uri.parse('$_baseUrl/api/v1/$path'), headers: _authorizedHeaders())
-        .timeout(_timeout);
+    final response = await _authorizedGet(path);
     return _decodeResponse(response);
   }
 
@@ -307,24 +412,150 @@ class VibeStoreApi {
   Future<Map<String, dynamic>> inspectRepository(String repositoryUrl) =>
       _post('repositories/inspect', {'repository_url': repositoryUrl.trim()});
 
-  void logout() {
-    _accessToken = null;
+  Future<void> logout() async {
+    final refreshToken = _refreshToken;
+    try {
+      if (refreshToken != null && _baseUrl.isNotEmpty) {
+        await _client
+            .post(
+              Uri.parse('$_baseUrl/api/v1/auth/logout'),
+              headers: const {'Content-Type': 'application/json'},
+              body: jsonEncode({'refresh_token': refreshToken}),
+            )
+            .timeout(_timeout);
+      }
+    } catch (_) {
+      // Local credentials are cleared even when the API is unreachable.
+    } finally {
+      await _clearTokens();
+    }
   }
 
-  void _saveToken(Map<String, dynamic> response) {
-    final token = response['access_token'];
-    if (token is! String || token.isEmpty) {
-      throw const VibeStoreApiException(
-        'The API returned an invalid access token.',
-      );
+  Future<void> _clearTokens() async {
+    _accessToken = null;
+    _refreshToken = null;
+    await _secureStorage.delete(key: _accessTokenKey);
+    await _secureStorage.delete(key: _refreshTokenKey);
+  }
+
+  Future<void> _saveToken(Map<String, dynamic> response) async {
+    final accessToken = response['access_token'];
+    final refreshToken = response['refresh_token'];
+    if (accessToken is! String ||
+        accessToken.isEmpty ||
+        refreshToken is! String ||
+        refreshToken.isEmpty) {
+      throw const VibeStoreApiException('The API returned an invalid session.');
     }
-    _accessToken = token;
+    _accessToken = accessToken;
+    _refreshToken = refreshToken;
+    await _secureStorage.write(key: _accessTokenKey, value: accessToken);
+    await _secureStorage.write(key: _refreshTokenKey, value: refreshToken);
+  }
+
+  Future<bool> _refreshSession() async {
+    final refreshToken = _refreshToken;
+    if (refreshToken == null || _baseUrl.isEmpty) return false;
+    http.Response response;
+    try {
+      response = await _client
+          .post(
+            Uri.parse('$_baseUrl/api/v1/auth/refresh'),
+            headers: const {'Content-Type': 'application/json'},
+            body: jsonEncode({'refresh_token': refreshToken}),
+          )
+          .timeout(_timeout);
+    } catch (_) {
+      return false;
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      await _clearTokens();
+      return false;
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return false;
+    }
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map<String, dynamic>) {
+        await _clearTokens();
+        return false;
+      }
+      await _saveToken(decoded);
+      return true;
+    } on FormatException {
+      await _clearTokens();
+      return false;
+    } on VibeStoreApiException {
+      await _clearTokens();
+      return false;
+    }
+  }
+
+  Future<http.Response> _authorizedGet(String path) async {
+    final uri = Uri.parse('$_baseUrl/api/v1/$path');
+    var response = await _client
+        .get(uri, headers: _authorizedHeaders())
+        .timeout(_timeout);
+    if (response.statusCode == 401 && await _refreshSession()) {
+      response = await _client
+          .get(uri, headers: _authorizedHeaders())
+          .timeout(_timeout);
+    }
+    return response;
+  }
+
+  Future<http.Response> _authorizedPut(String path) async {
+    final uri = Uri.parse('$_baseUrl/api/v1/$path');
+    var response = await _client
+        .put(uri, headers: _authorizedHeaders())
+        .timeout(_timeout);
+    if (response.statusCode == 401 && await _refreshSession()) {
+      response = await _client
+          .put(uri, headers: _authorizedHeaders())
+          .timeout(_timeout);
+    }
+    return response;
+  }
+
+  Future<http.Response> _authorizedPost(
+    String path,
+    Map<String, dynamic> payload,
+  ) async {
+    final uri = Uri.parse('$_baseUrl/api/v1/$path');
+    final headers = _authorizedHeaders();
+    headers['Content-Type'] = 'application/json';
+    var response = await _client
+        .post(uri, headers: headers, body: jsonEncode(payload))
+        .timeout(_timeout);
+    if (response.statusCode == 401 && await _refreshSession()) {
+      final retryHeaders = _authorizedHeaders();
+      retryHeaders['Content-Type'] = 'application/json';
+      response = await _client
+          .post(uri, headers: retryHeaders, body: jsonEncode(payload))
+          .timeout(_timeout);
+    }
+    return response;
+  }
+
+  Future<http.Response> _authorizedDelete(String path) async {
+    final uri = Uri.parse('$_baseUrl/api/v1/$path');
+    var response = await _client
+        .delete(uri, headers: _authorizedHeaders())
+        .timeout(_timeout);
+    if (response.statusCode == 401 && await _refreshSession()) {
+      response = await _client
+          .delete(uri, headers: _authorizedHeaders())
+          .timeout(_timeout);
+    }
+    return response;
   }
 
   Future<Map<String, dynamic>> _post(
     String path,
     Map<String, dynamic> payload, {
     Duration timeout = _timeout,
+    bool allowRefresh = true,
   }) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
@@ -339,13 +570,17 @@ class VibeStoreApi {
       headers['Authorization'] = 'Bearer $token';
     }
 
-    final response = await _client
-        .post(
-          Uri.parse('$_baseUrl/api/v1/$path'),
-          headers: headers,
-          body: jsonEncode(payload),
-        )
+    final uri = Uri.parse('$_baseUrl/api/v1/$path');
+    var response = await _client
+        .post(uri, headers: headers, body: jsonEncode(payload))
         .timeout(timeout);
+    if (allowRefresh && response.statusCode == 401 && await _refreshSession()) {
+      final retryHeaders = _authorizedHeaders();
+      retryHeaders['Content-Type'] = 'application/json';
+      response = await _client
+          .post(uri, headers: retryHeaders, body: jsonEncode(payload))
+          .timeout(timeout);
+    }
     dynamic decoded;
     try {
       decoded = jsonDecode(response.body);

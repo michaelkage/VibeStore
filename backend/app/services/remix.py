@@ -2,7 +2,7 @@ import json
 
 from app.ai.openai_compatible import get_ai_provider
 
-MAX_CONTEXT_FILES = 12
+MAX_CONTEXT_FILES = 20
 MAX_FILE_CHARS = 6_000
 MAX_HISTORY_MESSAGES = 12
 MAX_HISTORY_CHARS = 12_000

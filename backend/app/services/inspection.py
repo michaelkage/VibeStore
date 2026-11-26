@@ -66,6 +66,9 @@ def build_static_inspection(files: dict[str, str]) -> dict:
         "manifest_found": manifest is not None,
         "package_name": parsed_manifest["package_name"] if parsed_manifest else None,
         "permissions": parsed_manifest["permissions"] if parsed_manifest else [],
+        "sdk_configuration": parsed_manifest["sdk_configuration"] if parsed_manifest else {},
+        "declared_features": parsed_manifest["declared_features"] if parsed_manifest else [],
+        "application_flags": parsed_manifest["application_flags"] if parsed_manifest else [],
         "sdk_detections": sdk_detections,
         "manifest_warnings": manifest_warnings,
         "architecture_indicators": indicators,
@@ -85,6 +88,9 @@ async def enrich_inspection(report: dict, files: dict[str, str]) -> dict:
             return report
         evidence = {
             "permissions": report["permissions"],
+            "sdk_configuration": report["sdk_configuration"],
+            "declared_features": report["declared_features"],
+            "application_flags": report["application_flags"],
             "sdk_detections": report["sdk_detections"],
             "manifest_warnings": report["manifest_warnings"],
             "architecture_indicators": report["architecture_indicators"],
