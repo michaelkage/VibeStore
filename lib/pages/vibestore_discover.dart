@@ -27,6 +27,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
 
   VibeStoreApi? _api;
   List<Map<String, dynamic>> _results = [];
+  List<Map<String, dynamic>> _catalog = [];
+  int _catalogTotal = 0;
+  String _catalogSort = 'popular';
   List<Map<String, dynamic>> _submissions = [];
   List<Map<String, dynamic>> _remixSessions = [];
   List<Map<String, dynamic>> _remixProposals = [];
@@ -128,6 +131,20 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     setState(() {
       _passwordController.clear();
       _notice = 'Signed in as ${user['email']}.';
+    });
+  });
+
+  Future<void> _loadCatalog() => _run(() async {
+    await _api!.configureBaseUrl(_baseUrlController.text);
+    final response = await _api!.catalog(sort: _catalogSort);
+    if (!mounted) return;
+    final items = response['items'] as List;
+    setState(() {
+      _catalog = items
+          .map((value) => Map<String, dynamic>.from(value as Map))
+          .toList(growable: false);
+      _catalogTotal = response['total'] as int? ?? _catalog.length;
+      _notice = 'Showing ${_catalog.length} of $_catalogTotal catalog apps.';
     });
   });
 
@@ -603,6 +620,91 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         ),
                         isThreeLine: true,
                       ),
+                ]),
+                _section('App catalog', Icons.apps_rounded, [
+                  Row(
+                    children: [
+                      const Text('Sort by'),
+                      const SizedBox(width: 12),
+                      DropdownButton<String>(
+                        value: _catalogSort,
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'popular',
+                            child: Text('Most popular'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'recent',
+                            child: Text('Recently indexed'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'name',
+                            child: Text('Name A–Z'),
+                          ),
+                        ],
+                        onChanged: _busy
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() => _catalogSort = value);
+                                _loadCatalog();
+                              },
+                      ),
+                      const Spacer(),
+                      FilledButton.tonalIcon(
+                        onPressed: _busy ? null : _loadCatalog,
+                        icon: const Icon(Icons.refresh_rounded),
+                        label: const Text('Browse'),
+                      ),
+                    ],
+                  ),
+                  if (_catalog.isEmpty)
+                    const Text(
+                      'Browse the indexed open-source Android app catalog.',
+                    )
+                  else ...[
+                    Text('$_catalogTotal apps in the catalog'),
+                    const Divider(height: 16),
+                    for (final app in _catalog)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        onTap: _busy
+                            ? null
+                            : () => _loadCachedInspection(
+                                app['id'].toString(),
+                                app['name']?.toString() ?? 'app',
+                              ),
+                        title: Text(app['name']?.toString() ?? 'Unnamed app'),
+                        subtitle: Text(
+                          [
+                            app['description']?.toString() ?? '',
+                            if (app['license'] != null)
+                              'License: ${app['license']}',
+                            app['repository_url']?.toString() ?? '',
+                          ].where((value) => value.isNotEmpty).join(' · '),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        trailing: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text('★ ${app['stars'] ?? 0}'),
+                            if (api.isAuthenticated)
+                              IconButton(
+                                tooltip: 'Start a remix',
+                                onPressed: _busy
+                                    ? null
+                                    : () => _createRemix(
+                                        app['id'].toString(),
+                                        app['name']?.toString() ?? 'app',
+                                      ),
+                                icon: const Icon(Icons.auto_awesome_rounded),
+                              ),
+                          ],
+                        ),
+                        isThreeLine: true,
+                      ),
+                  ],
                 ]),
                 _section('Discover apps', Icons.travel_explore_rounded, [
                   _textField(
