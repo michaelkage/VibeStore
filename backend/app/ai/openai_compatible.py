@@ -48,7 +48,7 @@ class OpenAICompatibleProvider(AIProvider):
                 except ValueError as exc:
                     raise RuntimeError("AI provider returned invalid JSON") from exc
                 if not isinstance(data, dict):
-                    raise RuntimeError("AI provider returned an unexpected response shape")
+                    raise TypeError("AI provider returned an unexpected response shape")
                 return data
             except (httpx.TimeoutException, httpx.TransportError):
                 if attempt + 1 >= attempts:
