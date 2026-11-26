@@ -194,3 +194,22 @@ async def test_repository_file_browser_returns_paths_and_pagination(catalog_clie
     assert payload["items"][0]["path"].endswith("MainActivity.kt")
     assert session.execute.await_count == 1
     assert session.scalar.await_count == 1
+
+
+
+def test_user_library_app_schema_exposes_favorite_and_recent_activity():
+    from datetime import UTC, datetime
+
+    from app.schemas import UserLibraryApp
+
+    now = datetime.now(UTC)
+    item = UserLibraryApp(
+        id=APP_ID,
+        name="Example",
+        repository_url="https://github.com/example/app",
+        stars=5,
+        favorited_at=now,
+        last_opened_at=now,
+    )
+    assert item.favorited_at == now
+    assert item.last_opened_at == now
