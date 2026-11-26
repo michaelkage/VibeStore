@@ -40,9 +40,7 @@ def parse_repository_url(repository_url: str) -> tuple[str, str, str]:
         raise ValueError("Repository URL must identify a namespace and project")
     if any(not _COMPONENT_RE.fullmatch(part) for part in parts):
         raise ValueError("Repository URL contains unsupported path characters")
-    project = parts[-1]
-    if project.endswith(".git"):
-        project = project[:-4]
+    project = parts[-1].removesuffix(".git")
     namespace = "/".join(parts[:-1])
     if not project:
         raise ValueError("Repository project name is missing")
