@@ -801,7 +801,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                             Text('★ ${app['stars'] ?? 0}'),
                             if (api.isAuthenticated)
                               IconButton(
-                                tooltip: _favoriteIds.contains(app['id'].toString())
+                                tooltip:
+                                    _favoriteIds.contains(app['id'].toString())
                                     ? 'Remove from library'
                                     : 'Add to library',
                                 onPressed: _busy
@@ -941,7 +942,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text('${_library.length} saved or recently opened apps'),
+                          child: Text(
+                            '${_library.length} saved or recently opened apps',
+                          ),
                         ),
                         IconButton(
                           tooltip: 'Refresh library',
@@ -951,7 +954,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       ],
                     ),
                     if (_library.isEmpty)
-                      const Text('Bookmark apps from the catalog to build your library.')
+                      const Text(
+                        'Bookmark apps from the catalog to build your library.',
+                      )
                     else
                       for (final app in _library)
                         ListTile(
@@ -960,7 +965,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                           subtitle: Text(
                             [
                               if (app['favorited_at'] != null) 'Favorite',
-                              if (app['last_opened_at'] != null) 'Recently opened',
+                              if (app['last_opened_at'] != null)
+                                'Recently opened',
                               app['license']?.toString() ?? '',
                             ].where((value) => value.isNotEmpty).join(' · '),
                           ),
