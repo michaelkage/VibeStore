@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = ""
     jwt_issuer: str = "vibestore-api"
     jwt_access_token_minutes: int = Field(default=30, ge=5, le=1440)
+    jwt_refresh_token_days: int = Field(default=30, ge=1, le=90)
     catalog_refresh_interval_days: int = Field(default=7, ge=1, le=90)
     catalog_refresh_batch_size: int = Field(default=50, ge=1, le=500)
     indexing_reconcile_batch_size: int = Field(default=100, ge=1, le=1000)
