@@ -22,6 +22,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _queryController = TextEditingController();
+  final _minimumStarsController = TextEditingController();
+  String _searchLicense = 'any';
   final _repositoryController = TextEditingController();
   final _remixPromptController = TextEditingController();
 
@@ -98,6 +100,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     _emailController.dispose();
     _passwordController.dispose();
     _queryController.dispose();
+    _minimumStarsController.dispose();
     _repositoryController.dispose();
     _remixPromptController.dispose();
     super.dispose();
@@ -158,7 +161,20 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
 
   Future<void> _search() => _run(() async {
     await _api!.configureBaseUrl(_baseUrlController.text);
-    final results = await _api!.search(_queryController.text);
+    final minimumStarsText = _minimumStarsController.text.trim();
+    final minimumStars = minimumStarsText.isEmpty
+        ? null
+        : int.tryParse(minimumStarsText);
+    if (minimumStarsText.isNotEmpty && minimumStars == null) {
+      throw const VibeStoreApiException(
+        'Minimum stars must be a whole number.',
+      );
+    }
+    final results = await _api!.search(
+      _queryController.text,
+      license: _searchLicense == 'any' ? null : _searchLicense,
+      minStars: minimumStars,
+    );
     if (!mounted) return;
     setState(() {
       _results = results;
@@ -719,6 +735,53 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                     _queryController,
                     'Describe what you are looking for',
                     hint: 'A private notes app with offline sync',
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _searchLicense,
+                          decoration: const InputDecoration(
+                            labelText: 'License',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'any',
+                              child: Text('Any license'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'MIT',
+                              child: Text('MIT'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'Apache-2.0',
+                              child: Text('Apache-2.0'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'GPL-3.0',
+                              child: Text('GPL-3.0'),
+                            ),
+                          ],
+                          onChanged: _busy
+                              ? null
+                              : (value) {
+                                  if (value != null) {
+                                    setState(() => _searchLicense = value);
+                                  }
+                                },
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _textField(
+                          _minimumStarsController,
+                          'Minimum stars',
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 12),
                   Align(
