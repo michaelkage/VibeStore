@@ -81,6 +81,28 @@ def _license_value(value):
     return value if isinstance(value, str) else None
 
 
+
+async def _read_bounded_source(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    headers: dict[str, str],
+    params: dict | None = None,
+) -> bytes | None:
+    chunks = []
+    total = 0
+    async with client.stream("GET", url, params=params, headers=headers) as response:
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes():
+            total += len(chunk)
+            if total > _MAX_FILE_BYTES:
+                return None
+            chunks.append(chunk)
+    return b"".join(chunks)
+
+
 async def _fetch_gitlab_snapshot(namespace: str, project: str) -> dict:
     settings = get_settings()
     project_path = quote(f"{namespace}/{project}", safe="")
@@ -148,22 +170,20 @@ async def _fetch_gitlab_snapshot(namespace: str, project: str) -> dict:
             raw_url = (
                 f"{base}/repository/files/{quote(path, safe='')}/raw"
             )
-            response = await client.get(
+            content = await _read_bounded_source(
+                client,
                 raw_url,
                 params={"ref": commit_sha},
                 headers={"Accept": "text/plain", **headers},
             )
-            if response.status_code == 404:
-                continue
-            response.raise_for_status()
-            if len(response.content) > _MAX_FILE_BYTES:
+            if content is None:
                 continue
             files.append(
                 {
                     "path": path,
                     "content_sha": entry["id"],
-                    "content": response.content.decode("utf-8", errors="replace"),
-                    "size": len(response.content),
+                    "content": content.decode("utf-8", errors="replace"),
+                    "size": len(content),
                 }
             )
 
@@ -235,21 +255,19 @@ async def _fetch_codeberg_snapshot(namespace: str, project: str) -> dict:
                 f"https://codeberg.org/{namespace}/{project}/raw/commit/"
                 f"{quote(commit_sha, safe='')}/{quote(path, safe='/')}"
             )
-            response = await client.get(
+            content = await _read_bounded_source(
+                client,
                 raw_url,
                 headers={"Accept": "text/plain", **headers},
             )
-            if response.status_code == 404:
-                continue
-            response.raise_for_status()
-            if len(response.content) > _MAX_FILE_BYTES:
+            if content is None:
                 continue
             files.append(
                 {
                     "path": path,
                     "content_sha": entry["sha"],
-                    "content": response.content.decode("utf-8", errors="replace"),
-                    "size": len(response.content),
+                    "content": content.decode("utf-8", errors="replace"),
+                    "size": len(content),
                 }
             )
 
