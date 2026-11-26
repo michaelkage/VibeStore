@@ -523,8 +523,10 @@ class VibeStoreApi {
     if (allowRefresh &&
         response.statusCode == 401 &&
         await _refreshSession()) {
+      final retryHeaders = _authorizedHeaders();
+      retryHeaders['Content-Type'] = 'application/json';
       response = await _client
-          .post(uri, headers: _authorizedHeaders()..['Content-Type'] = 'application/json', body: jsonEncode(payload))
+          .post(uri, headers: retryHeaders, body: jsonEncode(payload))
           .timeout(timeout);
     }
     dynamic decoded;
