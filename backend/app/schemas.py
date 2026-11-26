@@ -24,6 +24,25 @@ class SearchResult(BaseModel):
     score: float
 
 
+
+class CatalogApp(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    repository_url: str
+    stars: int
+    license: str | None = None
+    latest_commit_sha: str | None = None
+    indexed_at: datetime | None = None
+
+
+class CatalogResponse(BaseModel):
+    items: list[CatalogApp]
+    total: int
+    limit: int
+    offset: int
+
+
 class RepositoryRequest(BaseModel):
     repository_url: HttpUrl
 
