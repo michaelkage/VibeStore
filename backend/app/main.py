@@ -11,8 +11,14 @@ from app.config import get_settings
 from app.db import SessionLocal, dispose_engine
 from app.redis_client import close_redis, init_redis, redis_is_healthy
 from app.schemas import HealthResponse
+from app.observability import (
+    RequestObservabilityMiddleware,
+    configure_logging,
+    metrics_payload,
+)
 
 settings = get_settings()
+configure_logging()
 
 
 @asynccontextmanager
@@ -26,6 +32,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="VibeStore API", version="0.2.0", lifespan=lifespan)
+app.add_middleware(RequestObservabilityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
@@ -53,3 +60,16 @@ async def health():
         database=database_status,
         redis=redis_status,
     )
+
+
+
+@app.get("/metrics", include_in_schema=False)
+async def metrics():
+    if not settings.metrics_enabled:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="Metrics endpoint is disabled")
+    from fastapi.responses import Response
+
+    payload, media_type = metrics_payload()
+    return Response(content=payload, media_type=media_type)
