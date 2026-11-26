@@ -32,14 +32,15 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="VibeStore API", version="0.2.0", lifespan=lifespan)
-app.add_middleware(RequestObservabilityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
+app.add_middleware(RequestObservabilityMiddleware)
 app.include_router(router, prefix=settings.api_v1_prefix)
 app.include_router(patch_processing_router, prefix=settings.api_v1_prefix)
 
