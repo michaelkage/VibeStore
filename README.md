@@ -38,7 +38,7 @@ flutter test
 
 ## Project status
 
-The repository currently includes bounded GitHub, GitLab.com and Codeberg indexing of Android manifests, build configuration and selected Kotlin/Java/XML source files; paginated catalog browsing; license/popularity-filtered lexical and semantic search; richer static X-Ray reports; selectable source context in Remix Studio; source-pinned GitHub patch proposals; exact-source diff validation; and isolated review-only source artifact generation.
+The repository currently includes bounded GitHub, GitLab.com and Codeberg indexing of Android manifests, build configuration and selected Kotlin/Java/XML source files; paginated catalog browsing; license/popularity-filtered lexical and semantic search; richer static X-Ray reports; selectable source context in Remix Studio; personal favorites and recent-app library; rotating refresh-token sessions; source-pinned GitHub patch proposals; exact-source diff validation; and isolated review-only source artifact generation.
 
 It does **not** yet provide arbitrary repository Gradle execution, APK signing, APK distribution or generated-app update feeds. Those capabilities must be implemented as separate, isolated services; the API process must never execute untrusted repository code or hold user signing keys.
 
