@@ -38,7 +38,7 @@ flutter test
 
 ## Project status
 
-The repository currently includes asynchronous GitHub repository indexing, scheduled catalog reconciliation, cached static inspection, lexical/optional embedding search, owner-scoped remix sessions, source-pinned patch proposals, exact-source diff validation and isolated modified-source artifact generation.
+The repository currently includes asynchronous GitHub, GitLab.com and Codeberg repository indexing, paginated catalog browsing, scheduled catalog reconciliation, cached static inspection, lexical/optional embedding search, owner-scoped remix sessions, source-pinned GitHub patch proposals, exact-source diff validation and isolated modified-source artifact generation.
 
 It does **not** yet provide arbitrary repository Gradle execution, APK signing, APK distribution or generated-app update feeds. Those capabilities must be implemented as separate, isolated services; the API process must never execute untrusted repository code or hold user signing keys.
 
