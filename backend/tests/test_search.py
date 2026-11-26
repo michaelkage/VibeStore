@@ -147,3 +147,20 @@ def test_embedding_rejects_empty_or_non_finite_values(values):
 def test_embedding_rejects_unreasonably_large_dimensions():
     with pytest.raises(ValueError):
         _serialize_embedding([0.0] * 8193)
+
+
+
+def test_search_request_validates_catalog_filters():
+    from pydantic import ValidationError
+
+    from app.schemas import SearchRequest
+
+    assert SearchRequest(
+        query="offline notes",
+        license="MIT",
+        min_stars=10,
+    ).min_stars == 10
+    with pytest.raises(ValidationError):
+        SearchRequest(query="offline notes", min_stars=-1)
+    with pytest.raises(ValidationError):
+        SearchRequest(query="offline notes", license="")
