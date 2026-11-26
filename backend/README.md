@@ -37,6 +37,7 @@ Health: http://localhost:8000/health
 - `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
 - `GET /api/v1/catalog`: browse the indexed app catalog with bounded pagination, optional full-text filtering, and popular/recent/name sorting.
 - `GET /api/v1/apps/{app_id}/files`: browse and filter the indexed source-file paths and excerpts for Remix Studio.
+- `GET /api/v1/library`, `PUT /api/v1/library/{app_id}/favorite`, `DELETE /api/v1/library/{app_id}/favorite`, `POST /api/v1/library/{app_id}/open`: owner-scoped favorites and recently opened applications.
 - `POST /api/v1/search`: PostgreSQL full-text search with optional exact SPDX-license and minimum-star filters, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
 - `POST /api/v1/repositories/inspect`: fetch a public supported-forge repository and report declared permissions, min/target SDK levels, hardware features, application flags, selected analytics/advertising/crash SDK declarations and XML-parsed manifest security findings.
 - `GET /api/v1/apps/{app_id}/inspection`: return the latest cached inspection report, including its source commit SHA.
