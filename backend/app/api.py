@@ -257,6 +257,7 @@ async def refresh_session(
     "/auth/logout",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["authentication"],
+    dependencies=[Depends(enforce_auth_rate_limit)],
 )
 async def logout_session(
     payload: RefreshTokenRequest,
