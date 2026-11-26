@@ -99,7 +99,17 @@ async def index_repository_snapshot(
     )
     for item in snapshot["files"]:
         suffix = item["path"].rsplit(".", 1)[-1].lower() if "." in item["path"] else ""
-        language = {"xml": "xml", "md": "markdown", "gradle": "gradle", "kts": "kotlin"}.get(suffix)
+        language = {
+            "xml": "xml",
+            "md": "markdown",
+            "gradle": "gradle",
+            "kts": "kotlin",
+            "kt": "kotlin",
+            "java": "java",
+            "toml": "toml",
+            "pro": "proguard",
+            "properties": "properties",
+        }.get(suffix)
         await session.execute(
             text("""
                 INSERT INTO repository_files (
