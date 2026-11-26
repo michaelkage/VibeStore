@@ -32,8 +32,8 @@ async def test_change_plan_uses_bounded_context_and_never_requests_execution(mon
     )
 
     assert result.startswith("## Plan")
-    assert "src/File11.kt" in provider.prompt
-    assert "src/File12.kt" not in provider.prompt
+    assert "src/File19.kt" in provider.prompt
+    assert "src/File20.kt" not in provider.prompt
     assert "older" in provider.prompt
     assert "produce plans only" in provider.system
     assert "Add a biometric lock" in provider.prompt
