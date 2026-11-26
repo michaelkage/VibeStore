@@ -82,6 +82,9 @@ class InspectionResponse(BaseModel):
     manifest_found: bool
     package_name: str | None = None
     permissions: list[ManifestFinding]
+    sdk_configuration: dict = Field(default_factory=dict)
+    declared_features: list[dict] = Field(default_factory=list)
+    application_flags: list[dict] = Field(default_factory=list)
     sdk_detections: list[SDKDetection] = Field(default_factory=list)
     manifest_warnings: list[StaticManifestFinding] = Field(default_factory=list)
     limitations: list[str]
