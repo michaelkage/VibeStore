@@ -11,8 +11,16 @@ def test_manifest_extracts_package_and_permission_risk():
 
 def test_manifest_with_no_permissions_is_valid():
     assert inspect_manifest('<manifest package="dev.empty" />') == {
-        "package_name": "dev.empty", "permissions": []
-}
+        "package_name": "dev.empty",
+        "permissions": [],
+        "sdk_configuration": {
+            "min_sdk_version": None,
+            "target_sdk_version": None,
+            "max_sdk_version": None,
+        },
+        "declared_features": [],
+        "application_flags": [],
+    }
 
 
 
