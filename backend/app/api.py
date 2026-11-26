@@ -711,6 +711,9 @@ async def inspect_repository(payload: RepositoryRequest):
             repository=str(payload.repository_url),
             manifest_found=False,
             permissions=[],
+            sdk_configuration={},
+            declared_features=[],
+            application_flags=[],
             sdk_detections=sdk_detections,
             manifest_warnings=[],
             limitations=[
@@ -728,6 +731,9 @@ async def inspect_repository(payload: RepositoryRequest):
         manifest_found=True,
         package_name=parsed["package_name"],
         permissions=[ManifestFinding(**finding) for finding in parsed["permissions"]],
+        sdk_configuration=parsed["sdk_configuration"],
+        declared_features=parsed["declared_features"],
+        application_flags=parsed["application_flags"],
         sdk_detections=sdk_detections,
         manifest_warnings=inspect_manifest_flags(manifest, manifest_path),
         limitations=[
