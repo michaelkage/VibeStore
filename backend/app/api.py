@@ -36,6 +36,8 @@ from app.schemas import (
     SearchResult,
     CatalogApp,
     CatalogResponse,
+    RepositoryFileEntry,
+    RepositoryFilesResponse,
     TokenResponse,
     UserResponse,
     RemixSessionCreateRequest,
