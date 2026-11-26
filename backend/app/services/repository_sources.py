@@ -10,8 +10,9 @@ from app.services.github import fetch_repository_snapshot as fetch_github_snapsh
 
 _ALLOWED_HOSTS = {"github.com", "gitlab.com", "codeberg.org"}
 _COMPONENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
-_MAX_FILE_BYTES = 1_000_000
-_MAX_INDEXED_FILES = 12
+_MAX_FILE_BYTES = 512_000
+_MAX_TOTAL_SOURCE_BYTES = 12_000_000
+_MAX_INDEXED_FILES = 60
 
 
 def parse_repository_url(repository_url: str) -> tuple[str, str, str]:
@@ -50,17 +51,30 @@ def parse_repository_url(repository_url: str) -> tuple[str, str, str]:
 def _is_indexable_file(path: str) -> bool:
     normalized = path.lower()
     filename = normalized.rsplit("/", 1)[-1]
+    suffix = "." + filename.rsplit(".", 1)[-1] if "." in filename else ""
+    excluded = {
+        ".git",
+        ".gradle",
+        "build",
+        "generated",
+        "node_modules",
+        "vendor",
+        "dist",
+        "target",
+    }
+    if any(part in excluded for part in normalized.split("/")):
+        return False
     return (
         normalized in {"readme.md", "readme"}
         or filename == "androidmanifest.xml"
-        or filename
-        in {
+        or filename in {
             "build.gradle",
             "build.gradle.kts",
             "settings.gradle",
             "settings.gradle.kts",
             "libs.versions.toml",
         }
+        or suffix in {".kt", ".java", ".xml", ".gradle", ".kts", ".toml", ".pro", ".properties"}
     )
 
 
@@ -163,6 +177,7 @@ async def _fetch_gitlab_snapshot(namespace: str, project: str) -> dict:
             key=lambda entry: _file_priority(entry["path"]),
         )
         files = []
+        total_source_bytes = 0
         for entry in candidates[:_MAX_INDEXED_FILES]:
             if int(entry.get("size") or 0) > _MAX_FILE_BYTES:
                 continue
@@ -178,6 +193,9 @@ async def _fetch_gitlab_snapshot(namespace: str, project: str) -> dict:
             )
             if content is None:
                 continue
+            if total_source_bytes + len(content) > _MAX_TOTAL_SOURCE_BYTES:
+                break
+            total_source_bytes += len(content)
             files.append(
                 {
                     "path": path,
