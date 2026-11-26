@@ -1,9 +1,66 @@
 import math
+from datetime import UTC, datetime
+from types import SimpleNamespace
 
+import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
-from app.api import _catalog_order_by, _serialize_embedding
+from app.api import _catalog_order_by, _serialize_embedding, router
+from app.auth import get_current_user
+from app.db import get_session
+
+
+USER_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+APP_ID = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+
+
+class FakeResult:
+    def __init__(self, rows=None):
+        self._rows = rows or []
+
+    def mappings(self):
+        return self
+
+    def __iter__(self):
+        return iter(self._rows)
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+@pytest.fixture
+async def catalog_client():
+    from unittest.mock import AsyncMock
+
+    session = SimpleNamespace(
+        execute=AsyncMock(),
+        scalar=AsyncMock(return_value=1),
+    )
+    app = FastAPI()
+    app.include_router(router, prefix="/api/v1")
+
+    async def override_session():
+        yield session
+
+    async def override_user():
+        return {
+            "id": USER_ID,
+            "email": "dev@example.com",
+            "created_at": datetime.now(UTC),
+        }
+
+    app.dependency_overrides[get_session] = override_session
+    app.dependency_overrides[get_current_user] = override_user
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport,
+        base_url="http://test",
+    ) as test_client:
+        yield test_client, session
+    app.dependency_overrides.clear()
 
 
 @pytest.mark.parametrize(
@@ -22,6 +79,59 @@ def test_catalog_sort_rejects_unrecognized_values():
     with pytest.raises(HTTPException) as error:
         _catalog_order_by("stars; DROP TABLE apps")
     assert error.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_catalog_returns_apps_and_pagination_metadata(catalog_client):
+    client, session = catalog_client
+    session.execute.return_value = FakeResult(
+        [
+            {
+                "id": APP_ID,
+                "name": "Example app",
+                "description": "A sample Android app",
+                "repository_url": "https://github.com/example/app",
+                "stars": 42,
+                "license": "MIT",
+                "latest_commit_sha": "a" * 40,
+                "indexed_at": datetime.now(UTC),
+            }
+        ]
+    )
+
+    response = await client.get(
+        "/api/v1/catalog",
+        params={"sort": "popular", "limit": 10, "offset": 20},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["limit"] == 10
+    assert payload["offset"] == 20
+    assert payload["items"][0]["id"] == APP_ID
+    assert payload["items"][0]["stars"] == 42
+    assert session.execute.await_count == 1
+    assert session.scalar.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_catalog_rejects_unsafe_sort_before_query(catalog_client):
+    client, session = catalog_client
+    response = await client.get(
+        "/api/v1/catalog",
+        params={"sort": "stars; DROP TABLE apps"},
+    )
+    assert response.status_code == 422
+    session.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_catalog_rejects_one_character_search(catalog_client):
+    client, session = catalog_client
+    response = await client.get("/api/v1/catalog", params={"query": "x"})
+    assert response.status_code == 422
+    session.execute.assert_not_awaited()
 
 
 def test_embedding_serializes_as_pgvector_literal():
