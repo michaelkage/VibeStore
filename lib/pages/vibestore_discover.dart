@@ -152,6 +152,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _results = [];
       _inspection = null;
       _submissions = [];
+      _library = [];
+      _favoriteIds.clear();
       _notice = 'API address saved. Sign in to index repositories.';
     });
   });
@@ -162,9 +164,18 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     final user = createAccount
         ? await api.register(_emailController.text, _passwordController.text)
         : await api.login(_emailController.text, _passwordController.text);
+    final library = await api.myLibrary();
     if (!mounted) return;
     setState(() {
       _passwordController.clear();
+      _library = library;
+      _favoriteIds
+        ..clear()
+        ..addAll(
+          library
+              .where((item) => item['favorited_at'] != null)
+              .map((item) => item['id'].toString()),
+        );
       _notice = 'Signed in as ${user['email']}.';
     });
   });
@@ -555,7 +566,17 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
 
   Future<void> _logout() async {
     await _api?.logout();
-    if (mounted) setState(() => _notice = 'Signed out.');
+    if (mounted) {
+      setState(() {
+        _library = [];
+        _favoriteIds.clear();
+        _repositoryFiles = [];
+        _selectedSourcePaths.clear();
+        _activeRemix = null;
+        _remixProposals = [];
+        _notice = 'Signed out.';
+      });
+    }
   }
 
   Widget _section(String title, IconData icon, List<Widget> children) {
