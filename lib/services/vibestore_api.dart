@@ -203,7 +203,7 @@ class VibeStoreApi {
   Map<String, String> _authorizedHeaders() {
     final headers = <String, String>{'Accept': 'application/json'};
     if (_accessToken case final token?) {
-      headers['Authorization'] = 'Bearer $token';
+      headers['Authorization'] = '***';
     }
     return headers;
   }
@@ -567,7 +567,7 @@ class VibeStoreApi {
       'Content-Type': 'application/json',
     };
     if (_accessToken case final token?) {
-      headers['Authorization'] = 'Bearer $token';
+      headers['Authorization'] = '***';
     }
 
     final uri = Uri.parse('$_baseUrl/api/v1/$path');
