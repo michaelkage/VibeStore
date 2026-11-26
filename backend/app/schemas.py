@@ -29,6 +29,22 @@ class SearchResult(BaseModel):
 
 
 
+class RepositoryFileEntry(BaseModel):
+    id: str
+    path: str
+    language: str | None = None
+    content_sha: str
+    content_excerpt: str
+    indexed_at: datetime
+
+
+class RepositoryFilesResponse(BaseModel):
+    items: list[RepositoryFileEntry]
+    total: int
+    limit: int
+    offset: int
+
+
 class CatalogApp(BaseModel):
     id: str
     name: str
