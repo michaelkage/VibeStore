@@ -1,8 +1,27 @@
 import math
 
 import pytest
+from fastapi import HTTPException
 
-from app.api import _serialize_embedding
+from app.api import _catalog_order_by, _serialize_embedding
+
+
+@pytest.mark.parametrize(
+    ("sort", "expected"),
+    [
+        ("popular", "stars DESC, name ASC"),
+        ("recent", "indexed_at DESC NULLS LAST, name ASC"),
+        ("name", "name ASC"),
+    ],
+)
+def test_catalog_sort_uses_fixed_sql_expressions(sort, expected):
+    assert _catalog_order_by(sort) == expected
+
+
+def test_catalog_sort_rejects_unrecognized_values():
+    with pytest.raises(HTTPException) as error:
+        _catalog_order_by("stars; DROP TABLE apps")
+    assert error.value.status_code == 422
 
 
 def test_embedding_serializes_as_pgvector_literal():
