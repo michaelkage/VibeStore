@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.openai_compatible import get_ai_provider
 from app.config import get_settings
-from app.services.github import fetch_repository_snapshot
+from app.services.repository_sources import fetch_repository_snapshot
 from app.services.inspection import create_inspection_report
 
 
