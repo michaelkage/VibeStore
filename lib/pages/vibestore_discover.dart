@@ -274,6 +274,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _activeRemix = session;
       _remixSessions = sessions;
       _remixProposals = [];
+      _repositoryFiles = [];
+      _repositoryFileTotal = 0;
       _remixPromptController.clear();
       _notice =
           'Remix session created for $appName at commit ${session['source_commit_sha']}.';
@@ -288,6 +290,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     setState(() {
       _activeRemix = session;
       _remixProposals = proposals;
+      _repositoryFiles = [];
+      _repositoryFileTotal = 0;
       _notice = 'Opened remix session: ${session['title']}.';
     });
   });
