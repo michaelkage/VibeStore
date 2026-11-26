@@ -80,6 +80,44 @@ async def test_async_indexing_endpoint_enqueues_and_returns_job(job_client, monk
     session.commit.assert_awaited_once()
 
 
+@pytest.mark.parametrize(
+    "repository_url",
+    [
+        "https://gitlab.com/group/subgroup/project",
+        "https://codeberg.org/example/android-app",
+    ],
+)
+@pytest.mark.asyncio
+async def test_async_indexing_accepts_supported_repository_forges(
+    job_client,
+    monkeypatch,
+    repository_url,
+):
+    client, session = job_client
+    session.execute.return_value = FakeResult(row={
+        "id": JOB_ID,
+        "status": "queued",
+        "repository_url": repository_url,
+        "attempt_count": 0,
+        "error": None,
+        "app_id": None,
+        "created_at": datetime.now(UTC),
+        "updated_at": datetime.now(UTC),
+        "completed_at": None,
+    })
+    enqueue = AsyncMock()
+    monkeypatch.setattr("app.api.enqueue_repository_index", enqueue)
+
+    response = await client.post(
+        "/api/v1/repositories/index-jobs",
+        json={"repository_url": repository_url},
+    )
+
+    assert response.status_code == 202
+    enqueue.assert_awaited_once()
+    assert enqueue.await_args.args[1:] == (repository_url, USER_ID)
+
+
 @pytest.mark.asyncio
 async def test_github_webhook_verifies_signature_and_enqueues_default_branch(job_client, monkeypatch):
     client, session = job_client
