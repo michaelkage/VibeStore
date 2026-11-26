@@ -14,6 +14,8 @@ class HealthResponse(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(min_length=3, max_length=500)
     limit: int = Field(default=20, ge=1, le=50)
+    license: str | None = Field(default=None, min_length=1, max_length=100)
+    min_stars: int | None = Field(default=None, ge=0)
 
 
 class SearchResult(BaseModel):
@@ -22,6 +24,8 @@ class SearchResult(BaseModel):
     description: str | None = None
     repository_url: str
     score: float
+    stars: int = 0
+    license: str | None = None
 
 
 
