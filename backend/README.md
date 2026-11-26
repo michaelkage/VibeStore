@@ -29,7 +29,7 @@ Health: http://localhost:8000/health
 - `POST /api/v1/auth/register`: create an account and issue a short-lived access token.
 - `POST /api/v1/auth/token`: exchange email/password for an access token.
 - `GET /api/v1/auth/me`: return the authenticated account.
-- `POST /api/v1/repositories/index`: synchronous authenticated indexing endpoint retained for compatibility.
+- `POST /api/v1/repositories/index`: synchronous authenticated indexing endpoint retained for compatibility. Repository indexing and static inspection support public GitHub, GitLab.com, and Codeberg repositories; patch validation and artifact processing currently remain GitHub-only.
 - `POST /api/v1/repositories/index-jobs`: enqueue authenticated repository indexing and return a job ID (HTTP 202).
 - `GET /api/v1/repositories/jobs/{job_id}`: poll the caller-owned job state, attempt count, error and resulting catalog app ID.
 - `POST /api/v1/webhooks/github`: signed GitHub webhook endpoint; queues default-branch `push` deliveries and deduplicates delivery IDs.
@@ -60,7 +60,7 @@ Health: http://localhost:8000/health
 
 ## Background indexing, refresh and reconciliation
 
-The API enqueues jobs in Redis using Arq; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled. Each successful indexing pass also stores a commit-keyed static inspection report. When an AI provider is configured, the worker adds a short evidence-constrained explanation; provider errors do not discard deterministic findings or fail repository indexing.
+The API enqueues jobs in Redis using Arq. Public repository metadata and bounded source snapshots are supported from GitHub, GitLab.com (including nested group paths), and Codeberg. Optional `GITLAB_TOKEN` and `CODEBERG_TOKEN` values can be configured to improve authenticated API rate limits. GitHub webhook ingestion remains GitHub-specific, and source-pinned patch validation/build artifacts are not yet available for GitLab or Codeberg repositories; the dedicated Compose `worker` service consumes them independently from the API process. The worker persists job state in PostgreSQL (`queued`, `running`, `retrying`, `completed`, `failed`), records attempt counts, retries failures up to five attempts with exponential backoff, and reuses the bounded GitHub fetcher. Jobs use deterministic IDs to avoid duplicate Redis enqueue operations. The worker stores configured embeddings when AI is enabled. Each successful indexing pass also stores a commit-keyed static inspection report. When an AI provider is configured, the worker adds a short evidence-constrained explanation; provider errors do not discard deterministic findings or fail repository indexing.
 
 The same worker runs a scheduled reconciliation every 15 minutes and once at startup. It:
 
