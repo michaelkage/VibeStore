@@ -320,8 +320,10 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
       _repositoryFiles = items
           .map((value) => Map<String, dynamic>.from(value as Map))
           .toList(growable: false);
-      _repositoryFileTotal = response['total'] as int? ?? _repositoryFiles.length;
-      _notice = 'Loaded ${_repositoryFiles.length} of $_repositoryFileTotal indexed source files.';
+      _repositoryFileTotal =
+          response['total'] as int? ?? _repositoryFiles.length;
+      _notice =
+          'Loaded ${_repositoryFiles.length} of $_repositoryFileTotal indexed source files.';
     });
   });
 
@@ -954,7 +956,8 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                               onChanged: _busy
                                   ? null
                                   : (selected) {
-                                      final path = file['path']?.toString() ?? '';
+                                      final path =
+                                          file['path']?.toString() ?? '';
                                       setState(() {
                                         if (selected == true) {
                                           _selectedSourcePaths.add(path);
@@ -964,7 +967,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                       });
                                     },
                             ),
-                            title: Text(file['path']?.toString() ?? 'Source file'),
+                            title: Text(
+                              file['path']?.toString() ?? 'Source file',
+                            ),
                             subtitle: Text(
                               '${file['language'] ?? 'source'} · ${file['content_sha']?.toString().substring(0, 10) ?? 'unknown'}',
                             ),
