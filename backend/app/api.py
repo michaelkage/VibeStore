@@ -15,6 +15,8 @@ from app.ai.openai_compatible import get_ai_provider
 from app.auth import (
     _DUMMY_PASSWORD_HASH,
     create_access_token,
+    create_refresh_token,
+    hash_refresh_token,
     get_current_user,
     hash_password,
     verify_password,
@@ -27,6 +29,7 @@ from app.schemas import (
     InspectionResponse,
     IndexRepositoryResponse,
     LoginRequest,
+    RefreshTokenRequest,
     ManifestFinding,
     RegisterRequest,
     RepositoryRequest,
@@ -97,6 +100,22 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
             {"email": email, "password_hash": password_hash},
         )
         user = result.mappings().one()
+        refresh_token, refresh_hash = create_refresh_token()
+        await session.execute(
+            text("""
+                INSERT INTO user_refresh_tokens (token_hash, user_id, expires_at)
+                VALUES (
+                    :token_hash,
+                    CAST(:user_id AS uuid),
+                    now() + make_interval(days => :ttl_days)
+                )
+            """),
+            {
+                "token_hash": refresh_hash,
+                "user_id": user["id"],
+                "ttl_days": settings.jwt_refresh_token_days,
+            },
+        )
         await session.commit()
     except IntegrityError:
         await session.rollback()
@@ -104,6 +123,7 @@ async def register(payload: RegisterRequest, session: AsyncSession = Depends(get
     user_response = UserResponse(**dict(user))
     return TokenResponse(
         access_token=create_access_token(user_response.id),
+        refresh_token=refresh_token,
         expires_in=settings.jwt_access_token_minutes * 60,
         user=user_response,
     )
@@ -133,11 +153,127 @@ async def login(payload: LoginRequest, session: AsyncSession = Depends(get_sessi
         raise HTTPException(status_code=401, detail="Invalid email or password",
                             headers={"WWW-Authenticate": "Bearer"})
     user_response = UserResponse(id=user["id"], email=user["email"], created_at=user["created_at"])
+    refresh_token, refresh_hash = create_refresh_token()
+    await session.execute(
+        text("""
+            INSERT INTO user_refresh_tokens (token_hash, user_id, expires_at)
+            VALUES (
+                :token_hash,
+                CAST(:user_id AS uuid),
+                now() + make_interval(days => :ttl_days)
+            )
+        """),
+        {
+            "token_hash": refresh_hash,
+            "user_id": user_response.id,
+            "ttl_days": settings.jwt_refresh_token_days,
+        },
+    )
+    await session.commit()
     return TokenResponse(
         access_token=create_access_token(user_response.id),
+        refresh_token=refresh_token,
         expires_in=settings.jwt_access_token_minutes * 60,
         user=user_response,
     )
+
+
+@router.post(
+    "/auth/refresh",
+    response_model=TokenResponse,
+    tags=["authentication"],
+    dependencies=[Depends(enforce_auth_rate_limit)],
+)
+async def refresh_session(
+    payload: RefreshTokenRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    settings = get_settings()
+    if len(settings.jwt_secret_key) < 32:
+        raise HTTPException(status_code=503, detail="Authentication is not configured")
+    old_hash = hash_refresh_token(payload.refresh_token)
+    revoked = await session.execute(
+        text("""
+            UPDATE user_refresh_tokens
+            SET revoked_at = now(), last_used_at = now()
+            WHERE token_hash = :token_hash
+              AND revoked_at IS NULL
+              AND expires_at > now()
+            RETURNING user_id::text AS user_id
+        """),
+        {"token_hash": old_hash},
+    )
+    row = revoked.mappings().first()
+    if row is None:
+        await session.rollback()
+        raise HTTPException(status_code=401, detail="Refresh token is invalid or expired")
+    user_result = await session.execute(
+        text("""
+            SELECT id::text AS id, email, created_at
+            FROM users
+            WHERE id = CAST(:user_id AS uuid) AND disabled = false
+        """),
+        {"user_id": row["user_id"]},
+    )
+    user = user_result.mappings().first()
+    if user is None:
+        await session.rollback()
+        raise HTTPException(status_code=401, detail="Account is unavailable")
+    user_response = UserResponse(**dict(user))
+    refresh_token, new_hash = create_refresh_token()
+    await session.execute(
+        text("""
+            INSERT INTO user_refresh_tokens (token_hash, user_id, expires_at)
+            VALUES (
+                :token_hash,
+                CAST(:user_id AS uuid),
+                now() + make_interval(days => :ttl_days)
+            )
+        """),
+        {
+            "token_hash": new_hash,
+            "user_id": user_response.id,
+            "ttl_days": settings.jwt_refresh_token_days,
+        },
+    )
+    await session.execute(
+        text("""
+            UPDATE user_refresh_tokens
+            SET replaced_by_hash = :new_hash
+            WHERE token_hash = :old_hash
+        """),
+        {"new_hash": new_hash, "old_hash": old_hash},
+    )
+    await session.commit()
+    return TokenResponse(
+        access_token=create_access_token(user_response.id),
+        refresh_token=refresh_token,
+        expires_in=settings.jwt_access_token_minutes * 60,
+        user=user_response,
+    )
+
+
+@router.post(
+    "/auth/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["authentication"],
+)
+async def logout_session(
+    payload: RefreshTokenRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    await session.execute(
+        text("""
+            UPDATE user_refresh_tokens
+            SET revoked_at = now(), last_used_at = now()
+            WHERE token_hash = :token_hash AND revoked_at IS NULL
+        """),
+        {"token_hash": hash_refresh_token(payload.refresh_token)},
+    )
+    await session.commit()
+    from fastapi import Response
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/auth/me", response_model=UserResponse, tags=["authentication"])
