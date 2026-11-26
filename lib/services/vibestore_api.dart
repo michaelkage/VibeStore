@@ -327,10 +327,7 @@ class VibeStoreApi {
     timeout: const Duration(seconds: 60),
   );
 
-  Future<http.Response> patchArtifact(
-    String remixId,
-    String proposalId,
-  ) async {
+  Future<http.Response> patchArtifact(String remixId, String proposalId) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
         'Configure the VibeStore API address first.',
