@@ -174,7 +174,7 @@ async def _fetch_gitlab_snapshot(namespace: str, project: str) -> dict:
                 client,
                 raw_url,
                 params={"ref": commit_sha},
-                headers={"Accept": "text/plain", **headers},
+                headers={**headers, "Accept": "text/plain"},
             )
             if content is None:
                 continue
