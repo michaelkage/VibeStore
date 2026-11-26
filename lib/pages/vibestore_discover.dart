@@ -1264,11 +1264,12 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         spacing: 8,
                         runSpacing: 8,
                         children: [
-                          OutlinedButton.icon(
-                            onPressed: _busy ? null : _generatePatchProposal,
-                            icon: const Icon(Icons.difference_outlined),
-                            label: const Text('Draft source diff'),
-                          ),
+                          if (_supportsPatchRemix(active))
+                            OutlinedButton.icon(
+                              onPressed: _busy ? null : _generatePatchProposal,
+                              icon: const Icon(Icons.difference_outlined),
+                              label: const Text('Draft source diff'),
+                            ),
                           FilledButton.icon(
                             onPressed: _busy ? null : _sendRemixMessage,
                             icon: const Icon(Icons.auto_awesome_rounded),
@@ -1278,7 +1279,9 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Patch drafts are review-only. Approving records your decision; it does not edit files or run a build.',
+                        _supportsPatchRemix(active)
+                            ? 'Patch drafts are review-only. Approving records your decision; it does not edit files or run a build.'
+                            : 'AI change plans are available for this source. Source patch generation is currently limited to GitHub repositories.',
                         style: Theme.of(context).textTheme.bodySmall,
                       ),
                       const SizedBox(height: 8),
