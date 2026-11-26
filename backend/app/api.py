@@ -48,12 +48,15 @@ from app.schemas import (
 )
 from app.services.architecture import detect_declared_sdks, inspect_manifest_flags
 from app.services.github import (
-    fetch_repository_files,
     fetch_repository_files_at_commit,
-    fetch_repository_snapshot,
     parse_github_url,
 )
 from app.services.manifest import inspect_manifest
+from app.services.repository_sources import (
+    fetch_repository_files,
+    fetch_repository_snapshot,
+    parse_repository_url,
+)
 from app.services.remix import generate_change_plan
 from app.services.remix_proposals import generate_patch_proposal, validate_patch_against_sources
 
@@ -296,7 +299,7 @@ async def enqueue_repository_index_job(
 ):
     repository_url = str(payload.repository_url)
     try:
-        parse_github_url(repository_url)
+        parse_repository_url(repository_url)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     job_id = str(uuid4())
