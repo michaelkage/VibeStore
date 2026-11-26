@@ -6,7 +6,7 @@ import math
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, status
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +34,8 @@ from app.schemas import (
     RepositoryIndexJobResponse,
     SearchRequest,
     SearchResult,
+    CatalogApp,
+    CatalogResponse,
     TokenResponse,
     UserResponse,
     RemixSessionCreateRequest,
@@ -512,6 +514,70 @@ async def remove_my_repository(
     if result.scalar_one_or_none() is None:
         raise HTTPException(status_code=404, detail="Repository submission not found")
     await session.commit()
+
+
+
+def _catalog_order_by(sort: str) -> str:
+    ordering = {
+        "popular": "stars DESC, name ASC",
+        "recent": "indexed_at DESC NULLS LAST, name ASC",
+        "name": "name ASC",
+    }
+    try:
+        return ordering[sort]
+    except KeyError:
+        raise HTTPException(
+            status_code=422,
+            detail="Sort must be one of: popular, recent, name",
+        ) from None
+
+
+@router.get("/catalog", response_model=CatalogResponse, tags=["discovery"])
+async def browse_catalog(
+    query: str | None = Query(default=None, max_length=200),
+    sort: str = "popular",
+    limit: int = Query(default=24, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    session: AsyncSession = Depends(get_session),
+):
+    normalized_query = query.strip() if query else None
+    if normalized_query is not None and len(normalized_query) < 2:
+        raise HTTPException(status_code=422, detail="Catalog query must contain at least 2 characters")
+    order_by = _catalog_order_by(sort)
+    params = {
+        "query": normalized_query,
+        "limit": limit,
+        "offset": offset,
+    }
+    rows = (
+        await session.execute(
+            text(f"""
+                SELECT id::text AS id, name, description, repository_url,
+                       stars, license, latest_commit_sha, indexed_at
+                FROM apps
+                WHERE (:query IS NULL OR
+                       search_document @@ websearch_to_tsquery('english', :query))
+                ORDER BY {order_by}
+                LIMIT :limit OFFSET :offset
+            """),
+            params,
+        )
+    ).mappings()
+    total = await session.scalar(
+        text("""
+            SELECT count(*)
+            FROM apps
+            WHERE (:query IS NULL OR
+                   search_document @@ websearch_to_tsquery('english', :query))
+        """),
+        {"query": normalized_query},
+    )
+    return CatalogResponse(
+        items=[CatalogApp(**dict(row)) for row in rows],
+        total=int(total or 0),
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.post("/search", response_model=list[SearchResult], tags=["discovery"])
