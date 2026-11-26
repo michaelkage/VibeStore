@@ -22,5 +22,6 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: dart format --output=show lib/services/vibestore_api.dart
+      - run: dart format --output=show lib/pages/vibestore_discover.dart
       - run: dart format --output=none --set-exit-if-changed lib/services/vibestore_api.dart lib/pages/vibestore_discover.dart lib/pages/apps.dart
       - run: flutter analyze --no-pub lib/services/vibestore_api.dart lib/pages/vibestore_discover.dart lib/pages/apps.dart
