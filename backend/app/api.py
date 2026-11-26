@@ -665,6 +665,55 @@ async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(ge
         raise
 
 @router.get(
+    "/apps/{app_id}/files",
+    response_model=RepositoryFilesResponse,
+    tags=["repositories"],
+)
+async def list_repository_files(
+    app_id: UUID,
+    query: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=100_000),
+    session: AsyncSession = Depends(get_session),
+):
+    normalized_query = query.strip() if query else None
+    rows = (
+        await session.execute(
+            text("""
+                SELECT id::text AS id, path, language, content_sha,
+                       content_excerpt, indexed_at
+                FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid)
+                  AND (:query IS NULL OR path ILIKE '%' || :query || '%')
+                ORDER BY path
+                LIMIT :limit OFFSET :offset
+            """),
+            {
+                "app_id": str(app_id),
+                "query": normalized_query,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+    ).mappings()
+    total = await session.scalar(
+        text("""
+            SELECT count(*)
+            FROM repository_files
+            WHERE app_id = CAST(:app_id AS uuid)
+              AND (:query IS NULL OR path ILIKE '%' || :query || '%')
+        """),
+        {"app_id": str(app_id), "query": normalized_query},
+    )
+    return RepositoryFilesResponse(
+        items=[RepositoryFileEntry(**dict(row)) for row in rows],
+        total=int(total or 0),
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
     "/apps/{app_id}/inspection",
     response_model=dict,
     tags=["inspection"],
