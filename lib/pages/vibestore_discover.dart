@@ -966,15 +966,21 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                           ),
                           leading: const Icon(Icons.android_rounded),
                           trailing: IconButton(
-                            tooltip: 'Remove favorite',
+                            tooltip: _favoriteIds.contains(app['id'].toString())
+                                ? 'Remove favorite'
+                                : 'Add to favorites',
                             onPressed: _busy
                                 ? null
                                 : () => _toggleFavorite(app),
-                            icon: const Icon(Icons.bookmark_remove_outlined),
+                            icon: Icon(
+                              _favoriteIds.contains(app['id'].toString())
+                                  ? Icons.bookmark_remove_outlined
+                                  : Icons.bookmark_add_outlined,
+                            ),
                           ),
                           onTap: _busy
                               ? null
-                              : () => _run(() async {
+                              : () async {
                                   await _api!.configureBaseUrl(
                                     _baseUrlController.text,
                                   );
@@ -985,7 +991,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                                     app['id'].toString(),
                                     app['name']?.toString() ?? 'app',
                                   );
-                                }),
+                                },
                         ),
                   ],
                 ]),
