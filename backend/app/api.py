@@ -671,20 +671,20 @@ async def unfavorite_app(
 ):
     await session.execute(
         text("""
-            UPDATE user_app_library
-            SET favorited_at = NULL
+            DELETE FROM user_app_library
             WHERE user_id = CAST(:user_id AS uuid)
               AND app_id = CAST(:app_id AS uuid)
-              AND last_opened_at IS NOT NULL
+              AND last_opened_at IS NULL
         """),
         {"user_id": user["id"], "app_id": str(app_id)},
     )
     await session.execute(
         text("""
-            DELETE FROM user_app_library
+            UPDATE user_app_library
+            SET favorited_at = NULL
             WHERE user_id = CAST(:user_id AS uuid)
               AND app_id = CAST(:app_id AS uuid)
-              AND last_opened_at IS NULL
+              AND last_opened_at IS NOT NULL
         """),
         {"user_id": user["id"], "app_id": str(app_id)},
     )
