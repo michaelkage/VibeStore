@@ -40,6 +40,14 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
   bool _initializing = true;
   bool _busy = false;
 
+  bool _supportsPatchRemix(Map<String, dynamic> app) {
+    final repository = Uri.tryParse(
+      app['repository_url']?.toString() ?? '',
+    );
+    return repository?.scheme == 'https' &&
+        repository?.host.toLowerCase() == 'github.com';
+  }
+
   Future<void> _openWebsite() async {
     try {
       final opened = await launchUrl(
@@ -689,7 +697,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             Text('★ ${app['stars'] ?? 0}'),
-                            if (api.isAuthenticated)
+                            if (api.isAuthenticated && _supportsPatchRemix(app))
                               IconButton(
                                 tooltip: 'Start a remix',
                                 onPressed: _busy
@@ -744,7 +752,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
                         trailing: Wrap(
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            if (api.isAuthenticated)
+                            if (api.isAuthenticated && _supportsPatchRemix(result))
                               IconButton(
                                 tooltip: 'Start a remix',
                                 onPressed: _busy
