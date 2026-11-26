@@ -69,3 +69,14 @@ def test_reject_unsupported_repository_sources(url):
 
     with pytest.raises(ValueError):
         parse_repository_url(url)
+
+
+
+def test_repository_indexing_includes_android_source_and_excludes_generated_files():
+    from app.services.repository_sources import _is_indexable_file
+
+    assert _is_indexable_file("app/src/main/kotlin/MainActivity.kt")
+    assert _is_indexable_file("app/src/main/java/MainActivity.java")
+    assert _is_indexable_file("app/src/main/res/layout/activity_main.xml")
+    assert not _is_indexable_file("app/build/generated/source/R.kt")
+    assert not _is_indexable_file("vendor/lib/src/ThirdParty.kt")
