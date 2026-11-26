@@ -130,8 +130,8 @@ class VibeStoreApi {
     final response = await _post('search', {
       'query': query,
       'limit': limit,
-      if (license != null) 'license': license,
-      if (minStars != null) 'min_stars': minStars,
+      'license': license,
+      'min_stars': minStars,
     });
     final items = response['items'];
     if (items is! List) {
