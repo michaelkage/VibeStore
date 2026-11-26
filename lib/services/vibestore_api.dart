@@ -234,6 +234,28 @@ class VibeStoreApi {
     return decoded;
   }
 
+  Future<Map<String, dynamic>> repositoryFiles(
+    String appId, {
+    String? query,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final parameters = <String, String>{
+      'limit': '$limit',
+      'offset': '$offset',
+      if (query != null && query.trim().isNotEmpty) 'query': query.trim(),
+    };
+    final response = await _get(
+      'apps/$appId/files?${Uri(queryParameters: parameters).query}',
+    );
+    if (response is! Map<String, dynamic> || response['items'] is! List) {
+      throw const VibeStoreApiException(
+        'The repository file response was invalid.',
+      );
+    }
+    return response;
+  }
+
   Future<Map<String, dynamic>> cachedInspection(String appId) async {
     if (_baseUrl.isEmpty) {
       throw const VibeStoreApiException(
