@@ -900,11 +900,6 @@ async def add_remix_message(
     remix = owned.mappings().first()
     if remix is None:
         raise HTTPException(status_code=404, detail="Active remix session not found")
-    if not str(remix["repository_url"]).startswith("https://github.com/"):
-        raise HTTPException(
-            status_code=409,
-            detail="AI patch proposals are currently supported only for GitHub repositories",
-        )
     if remix["latest_commit_sha"] != remix["source_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session to use the latest source snapshot")
     await enforce_remix_rate_limit(user["id"])
@@ -999,6 +994,11 @@ async def create_remix_patch_proposal(
     remix = owned.mappings().first()
     if remix is None:
         raise HTTPException(status_code=404, detail="Active remix session not found")
+    if not str(remix["repository_url"]).startswith("https://github.com/"):
+        raise HTTPException(
+            status_code=409,
+            detail="AI patch proposals are currently supported only for GitHub repositories",
+        )
     if remix["latest_commit_sha"] != remix["source_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session")
     await enforce_remix_rate_limit(user["id"])
