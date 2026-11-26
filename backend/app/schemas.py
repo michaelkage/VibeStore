@@ -34,7 +34,7 @@ class RepositoryFileEntry(BaseModel):
     path: str
     language: str | None = None
     content_sha: str
-    content_excerpt: str
+    content_excerpt: str | None = None
     indexed_at: datetime
 
 
