@@ -39,6 +39,8 @@ from app.schemas import (
     SearchResult,
     CatalogApp,
     CatalogResponse,
+    UserLibraryApp,
+    UserLibraryResponse,
     RepositoryFileEntry,
     RepositoryFilesResponse,
     TokenResponse,
@@ -601,6 +603,116 @@ async def github_webhook(
         await session.commit()
         raise HTTPException(status_code=503, detail="Repository indexing queue is unavailable") from exc
     return {"accepted": True, "job_id": job_id}
+
+
+@router.get("/library", response_model=UserLibraryResponse, tags=["library"])
+async def get_user_library(
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    rows = (
+        await session.execute(
+            text("""
+                SELECT apps.id::text AS id, apps.name, apps.description,
+                       apps.repository_url, apps.stars, apps.license,
+                       apps.latest_commit_sha, apps.indexed_at,
+                       library.favorited_at, library.last_opened_at
+                FROM user_app_library library
+                JOIN apps ON apps.id = library.app_id
+                WHERE library.user_id = CAST(:user_id AS uuid)
+                ORDER BY library.last_opened_at DESC NULLS LAST,
+                         library.favorited_at DESC NULLS LAST, apps.name
+            """),
+            {"user_id": user["id"]},
+        )
+    ).mappings()
+    return UserLibraryResponse(
+        items=[UserLibraryApp(**dict(row)) for row in rows],
+    )
+
+
+@router.put(
+    "/library/{app_id}/favorite",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["library"],
+)
+async def favorite_app(
+    app_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    exists = await session.execute(
+        text("SELECT 1 FROM apps WHERE id = CAST(:app_id AS uuid)"),
+        {"app_id": str(app_id)},
+    )
+    if exists.scalar_one_or_none() is None:
+        raise HTTPException(status_code=404, detail="Application not found")
+    await session.execute(
+        text("""
+            INSERT INTO user_app_library (user_id, app_id, favorited_at)
+            VALUES (CAST(:user_id AS uuid), CAST(:app_id AS uuid), now())
+            ON CONFLICT (user_id, app_id) DO UPDATE SET favorited_at = now()
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/library/{app_id}/favorite",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["library"],
+)
+async def unfavorite_app(
+    app_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await session.execute(
+        text("""
+            UPDATE user_app_library
+            SET favorited_at = NULL
+            WHERE user_id = CAST(:user_id AS uuid)
+              AND app_id = CAST(:app_id AS uuid)
+              AND last_opened_at IS NOT NULL
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.execute(
+        text("""
+            DELETE FROM user_app_library
+            WHERE user_id = CAST(:user_id AS uuid)
+              AND app_id = CAST(:app_id AS uuid)
+              AND last_opened_at IS NULL
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/library/{app_id}/open",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["library"],
+)
+async def record_app_opened(
+    app_id: UUID,
+    user=Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    await session.execute(
+        text("""
+            INSERT INTO user_app_library (user_id, app_id, last_opened_at)
+            SELECT CAST(:user_id AS uuid), apps.id, now()
+            FROM apps WHERE apps.id = CAST(:app_id AS uuid)
+            ON CONFLICT (user_id, app_id) DO UPDATE SET last_opened_at = now()
+        """),
+        {"user_id": user["id"], "app_id": str(app_id)},
+    )
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(
