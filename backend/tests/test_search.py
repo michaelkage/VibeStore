@@ -164,3 +164,33 @@ def test_search_request_validates_catalog_filters():
         SearchRequest(query="offline notes", min_stars=-1)
     with pytest.raises(ValidationError):
         SearchRequest(query="offline notes", license="")
+
+
+
+@pytest.mark.asyncio
+async def test_repository_file_browser_returns_paths_and_pagination(catalog_client):
+    client, session = catalog_client
+    session.execute.return_value = FakeResult(
+        [
+            {
+                "id": APP_ID,
+                "path": "app/src/main/kotlin/MainActivity.kt",
+                "language": "kotlin",
+                "content_sha": "a" * 40,
+                "content_excerpt": "class MainActivity",
+                "indexed_at": datetime.now(UTC),
+            }
+        ]
+    )
+    response = await client.get(
+        f"/api/v1/apps/{APP_ID}/files",
+        params={"query": "MainActivity", "limit": 25, "offset": 5},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["limit"] == 25
+    assert payload["offset"] == 5
+    assert payload["items"][0]["path"].endswith("MainActivity.kt")
+    assert session.execute.await_count == 1
+    assert session.scalar.await_count == 1
