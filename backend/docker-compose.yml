@@ -5,6 +5,12 @@ services:
     ports: ["8000:8000"]
     command: ["sh", "-c", "python -m app.migrate && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     networks: [app_net, patch_internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import json,urllib.request; assert json.load(urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3))['status'] == 'ok'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
     depends_on:
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -14,6 +20,7 @@ services:
     command: ["arq", "app.worker.WorkerSettings"]
     networks: [app_net]
     depends_on:
+      api: { condition: service_healthy }
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
     restart: unless-stopped
@@ -23,6 +30,7 @@ services:
     command: ["arq", "app.patch_worker.PatchWorkerSettings"]
     networks: [patch_internal]
     depends_on:
+      api: { condition: service_healthy }
       db: { condition: service_healthy }
       redis: { condition: service_healthy }
     read_only: true
