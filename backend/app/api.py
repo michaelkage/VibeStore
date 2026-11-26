@@ -598,18 +598,34 @@ async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(ge
         except (RuntimeError, httpx.HTTPError, ValueError) as exc:
             raise HTTPException(status_code=503, detail="Semantic search is temporarily unavailable") from exc
 
+    params = {
+        "query": payload.query,
+        "embedding": embedding_literal,
+        "embedding_model": settings.ai_embedding_model,
+        "limit": payload.limit,
+        "license": payload.license.strip() if payload.license else None,
+        "min_stars": payload.min_stars,
+    }
     if embedding_literal is not None:
         statement = text("""
-            WITH lexical AS (
-                SELECT id, ts_rank(search_document, websearch_to_tsquery('english', :query))::float AS score
-                FROM apps
-                WHERE search_document @@ websearch_to_tsquery('english', :query)
+            WITH eligible AS (
+                SELECT id FROM apps
+                WHERE (:license IS NULL OR lower(coalesce(license, '')) = lower(:license))
+                  AND (:min_stars IS NULL OR stars >= :min_stars)
+            ),
+            lexical AS (
+                SELECT apps.id,
+                       ts_rank(apps.search_document, websearch_to_tsquery('english', :query))::float AS score
+                FROM apps JOIN eligible ON eligible.id = apps.id
+                WHERE apps.search_document @@ websearch_to_tsquery('english', :query)
             ),
             semantic AS (
-                SELECT id, GREATEST(0, 1 - (embedding <=> CAST(:embedding AS vector)))::float AS score
-                FROM apps
-                WHERE embedding IS NOT NULL AND embedding_model = :embedding_model
-                ORDER BY embedding <=> CAST(:embedding AS vector)
+                SELECT apps.id,
+                       GREATEST(0, 1 - (apps.embedding <=> CAST(:embedding AS vector)))::float AS score
+                FROM apps JOIN eligible ON eligible.id = apps.id
+                WHERE apps.embedding IS NOT NULL
+                  AND apps.embedding_model = :embedding_model
+                ORDER BY apps.embedding <=> CAST(:embedding AS vector)
                 LIMIT :limit
             ),
             ranked AS (
@@ -618,28 +634,24 @@ async def search_apps(payload: SearchRequest, session: AsyncSession = Depends(ge
                 SELECT id, score * 0.35 AS score FROM semantic
             )
             SELECT apps.id::text AS id, apps.name, apps.description, apps.repository_url,
-                   SUM(ranked.score)::float AS score
+                   apps.stars, apps.license, SUM(ranked.score)::float AS score
             FROM ranked JOIN apps ON apps.id = ranked.id
-            GROUP BY apps.id, apps.name, apps.description, apps.repository_url
-            ORDER BY score DESC
+            GROUP BY apps.id, apps.name, apps.description, apps.repository_url,
+                     apps.stars, apps.license
+            ORDER BY score DESC, apps.stars DESC
             LIMIT :limit
         """)
-        params = {
-            "query": payload.query,
-            "embedding": embedding_literal,
-            "embedding_model": settings.ai_embedding_model,
-            "limit": payload.limit,
-        }
     else:
         statement = text("""
-            SELECT id::text, name, description, repository_url,
+            SELECT id::text, name, description, repository_url, stars, license,
                    ts_rank(search_document, websearch_to_tsquery('english', :query)) AS score
             FROM apps
             WHERE search_document @@ websearch_to_tsquery('english', :query)
+              AND (:license IS NULL OR lower(coalesce(license, '')) = lower(:license))
+              AND (:min_stars IS NULL OR stars >= :min_stars)
             ORDER BY score DESC, stars DESC
             LIMIT :limit
         """)
-        params = {"query": payload.query, "limit": payload.limit}
 
     try:
         rows = (await session.execute(statement, params)).mappings()
