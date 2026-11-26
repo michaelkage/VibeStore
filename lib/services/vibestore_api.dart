@@ -306,9 +306,11 @@ class VibeStoreApi {
 
   Future<Map<String, dynamic>> sendRemixMessage(
     String remixId,
-    String content,
-  ) => _post('remixes/$remixId/messages', {
+    String content, {
+    List<String> contextPaths = const [],
+  }) => _post('remixes/$remixId/messages', {
     'content': content.trim(),
+    'context_paths': contextPaths,
   }, timeout: const Duration(seconds: 110));
 
   Future<List<Map<String, dynamic>>> remixPatchProposals(String remixId) async {
@@ -325,9 +327,11 @@ class VibeStoreApi {
 
   Future<Map<String, dynamic>> generateRemixPatchProposal(
     String remixId,
-    String content,
-  ) => _post('remixes/$remixId/proposals', {
+    String content, {
+    List<String> contextPaths = const [],
+  }) => _post('remixes/$remixId/proposals', {
     'content': content.trim(),
+    'context_paths': contextPaths,
   }, timeout: const Duration(seconds: 110));
 
   Future<Map<String, dynamic>> validateRemixPatchProposal(
