@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: str = "http://localhost:3000"
     github_token: str | None = None
+    gitlab_token: str | None = None
+    codeberg_token: str | None = None
     github_webhook_secret: str = ""
     jwt_secret_key: str = ""
     jwt_issuer: str = "vibestore-api"
