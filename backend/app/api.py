@@ -831,6 +831,11 @@ async def add_remix_message(
     remix = owned.mappings().first()
     if remix is None:
         raise HTTPException(status_code=404, detail="Active remix session not found")
+    if not str(remix["repository_url"]).startswith("https://github.com/"):
+        raise HTTPException(
+            status_code=409,
+            detail="AI patch proposals are currently supported only for GitHub repositories",
+        )
     if remix["latest_commit_sha"] != remix["source_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session to use the latest source snapshot")
     await enforce_remix_rate_limit(user["id"])
@@ -917,7 +922,8 @@ async def create_remix_patch_proposal(
     user=Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ):
     owned = await session.execute(text("""
-        SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha, apps.latest_commit_sha
+        SELECT rs.id::text AS id, rs.app_id::text AS app_id, rs.source_commit_sha,
+               apps.latest_commit_sha, apps.repository_url
         FROM remix_sessions rs JOIN apps ON apps.id = rs.app_id
         WHERE rs.id = CAST(:id AS uuid) AND rs.owner_id = CAST(:owner_id AS uuid) AND rs.status = 'planning'
     """), {"id": str(remix_id), "owner_id": user["id"]})
