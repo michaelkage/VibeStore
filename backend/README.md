@@ -35,6 +35,7 @@ Health: http://localhost:8000/health
 - `POST /api/v1/webhooks/github`: signed GitHub webhook endpoint; queues default-branch `push` deliveries and deduplicates delivery IDs.
 - `GET /api/v1/repositories/mine`: list only the authenticated user's repository submissions.
 - `DELETE /api/v1/repositories/mine/{app_id}`: remove the authenticated user's submission link without deleting the shared catalog app or its indexed files.
+- `GET /api/v1/catalog`: browse the indexed app catalog with bounded pagination, optional full-text filtering, and popular/recent/name sorting.
 - `POST /api/v1/search`: PostgreSQL full-text search, upgraded to weighted lexical + cosine-similarity ranking when embeddings are configured and indexed.
 - `POST /api/v1/repositories/inspect`: fetch a public GitHub repository and report declared Android permissions, selected Gradle SDK dependencies and manifest security heuristics.
 - `GET /api/v1/apps/{app_id}/inspection`: return the latest cached inspection report, including its source commit SHA.
