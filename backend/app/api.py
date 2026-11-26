@@ -926,20 +926,36 @@ async def add_remix_message(
         """),
         {"id": str(remix_id)},
     )).mappings()
-    files = (await session.execute(
-        text("""
-            SELECT path, content_excerpt FROM repository_files
-            WHERE app_id = CAST(:app_id AS uuid)
-            ORDER BY CASE
-                WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
-                WHEN lower(path) LIKE '%build.gradle%' THEN 1
-                WHEN lower(path) LIKE '%readme%' THEN 2
-                ELSE 3 END, path
-            LIMIT 12
-        """),
-        {"app_id": remix["app_id"]},
-    )).mappings()
+    context_paths = list(dict.fromkeys(payload.context_paths))
+    if context_paths:
+        files = (await session.execute(
+            text("""
+                SELECT path, content_excerpt FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid) AND path = ANY(:paths)
+                ORDER BY path
+            """),
+            {"app_id": remix["app_id"], "paths": context_paths},
+        )).mappings()
+    else:
+        files = (await session.execute(
+            text("""
+                SELECT path, content_excerpt FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid)
+                ORDER BY CASE
+                    WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
+                    WHEN lower(path) LIKE '%build.gradle%' THEN 1
+                    WHEN lower(path) LIKE '%readme%' THEN 2
+                    ELSE 3 END, path
+                LIMIT 12
+            """),
+            {"app_id": remix["app_id"]},
+        )).mappings()
     file_rows = [dict(item) for item in files]
+    if context_paths and len(file_rows) != len(context_paths):
+        raise HTTPException(
+            status_code=422,
+            detail="One or more selected source files are not part of the indexed repository snapshot",
+        )
     # Recheck after reading the snapshot to close the catalog-refresh race window.
     current = await session.execute(
         text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),
@@ -1002,14 +1018,30 @@ async def create_remix_patch_proposal(
     if remix["latest_commit_sha"] != remix["source_commit_sha"]:
         raise HTTPException(status_code=409, detail="Repository changed since this remix began; start a new session")
     await enforce_remix_rate_limit(user["id"])
-    rows = (await session.execute(text("""
-        SELECT path, content_sha, content_excerpt FROM repository_files
-        WHERE app_id = CAST(:app_id AS uuid)
-        ORDER BY CASE WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
-                      WHEN lower(path) LIKE '%build.gradle%' THEN 1 ELSE 2 END, path
-        LIMIT 12
-    """), {"app_id": remix["app_id"]})).mappings()
+    context_paths = list(dict.fromkeys(payload.context_paths))
+    if context_paths:
+        rows = (await session.execute(
+            text("""
+                SELECT path, content_sha, content_excerpt FROM repository_files
+                WHERE app_id = CAST(:app_id AS uuid) AND path = ANY(:paths)
+                ORDER BY path
+            """),
+            {"app_id": remix["app_id"], "paths": context_paths},
+        )).mappings()
+    else:
+        rows = (await session.execute(text("""
+            SELECT path, content_sha, content_excerpt FROM repository_files
+            WHERE app_id = CAST(:app_id AS uuid)
+            ORDER BY CASE WHEN lower(path) LIKE '%androidmanifest.xml' THEN 0
+                          WHEN lower(path) LIKE '%build.gradle%' THEN 1 ELSE 2 END, path
+            LIMIT 12
+        """), {"app_id": remix["app_id"]})).mappings()
     files = [dict(row) for row in rows]
+    if context_paths and len(files) != len(context_paths):
+        raise HTTPException(
+            status_code=422,
+            detail="One or more selected source files are not part of the indexed repository snapshot",
+        )
     if not files:
         raise HTTPException(status_code=409, detail="No indexed source files are available for a proposal")
     current = await session.execute(text("SELECT latest_commit_sha FROM apps WHERE id = CAST(:app_id AS uuid)"),
