@@ -312,7 +312,7 @@ class _VibeStoreDiscoverPageState extends State<VibeStoreDiscoverPage> {
     final response = await _api!.repositoryFiles(
       appId,
       query: _fileQueryController.text,
-      limit: 100,
+      limit: 50,
     );
     if (!mounted) return;
     final items = response['items'] as List;
